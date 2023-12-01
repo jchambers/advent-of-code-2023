@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         {
             let sum = calibration_sum(BufReader::new(File::open(path)?)
                 .lines()
-                .filter_map(|line| line.ok()));
+                .map_while(Result::ok));
 
             println!("Sum of calibration values: {}", sum);
         }
@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         {
             let sum = calibration_sum_textual(BufReader::new(File::open(path)?)
                 .lines()
-                .filter_map(|line| line.ok()));
+                .map_while(Result::ok));
 
             println!("Sum of calibration values with text interpretation: {}", sum);
         }
