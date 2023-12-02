@@ -47,32 +47,44 @@ fn calibration_sum(lines: impl Iterator<Item = String>) -> u32 {
 }
 
 fn calibration_value_textual(line: &str) -> u32 {
-    let mut digits = Vec::new();
+    let chars: Vec<char> = line.chars().collect();
 
-    digits.extend(line.match_indices(char::is_numeric)
-        .map(|(index, slice)| (index, (slice.as_bytes()[0] - b'0') as u32)));
+    let first_digit = (0..chars.len())
+        .map(|offset| &chars[offset..])
+        .filter_map(to_digit_textual)
+        .next();
 
-    for (digit_string, digit_value) in [
-        ("one", 1),
-        ("two", 2),
-        ("three", 3),
-        ("four", 4),
-        ("five", 5),
-        ("six", 6),
-        ("seven", 7),
-        ("eight", 8),
-        ("nine", 9)] {
+    let last_digit = (0..chars.len())
+        .rev()
+        .map(|offset| &chars[offset..])
+        .filter_map(to_digit_textual)
+        .next();
 
-        digits.extend(line.match_indices(digit_string)
-            .map(|(index, _)| (index, digit_value)));
-    }
-
-    digits.sort_by_key(|(index, _)| *index);
-
-    if let (Some((_, first)), Some((_, last))) = (digits.first(), digits.last()) {
+    if let (Some(first), Some(last)) = (first_digit, last_digit) {
         first * 10 + last
     } else {
         0
+    }
+}
+
+fn to_digit_textual(slice: &[char]) -> Option<u32> {
+    match slice {
+        [n @ '0'..='9', ..] => {
+            let mut bytes = [0; 1];
+            n.encode_utf8(&mut bytes);
+
+            Some((bytes[0] - b'0') as u32)
+        }
+        ['o', 'n', 'e', ..] => Some(1),
+        ['t', 'w', 'o', ..] => Some(2),
+        ['t', 'h', 'r', 'e', 'e', ..] => Some(3),
+        ['f', 'o', 'u', 'r', ..] => Some(4),
+        ['f', 'i', 'v', 'e', ..] => Some(5),
+        ['s', 'i', 'x', ..] => Some(6),
+        ['s', 'e', 'v', 'e', 'n', ..] => Some(7),
+        ['e', 'i', 'g', 'h', 't', ..] => Some(8),
+        ['n', 'i', 'n', 'e', ..] => Some(9),
+        _ => None,
     }
 }
 
