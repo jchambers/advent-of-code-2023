@@ -1,4 +1,5 @@
-use crate::Cell::{Digit, Empty, Symbol};
+use crate::Cell::{Digit, Empty, Gear, OtherSymbol};
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::error::Error;
 use std::fs::File;
@@ -21,6 +22,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             schematic.part_number_sum()
         );
 
+        println!("Sum of gear ratios: {}", schematic.gear_ratio_sum());
+
         Ok(())
     } else {
         Err("Usage: day04 INPUT_FILE_PATH".into())
@@ -31,7 +34,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 enum Cell {
     Empty,
     Digit(u8),
-    Symbol,
+    Gear,
+    OtherSymbol,
 }
 
 struct EngineSchematic {
@@ -56,8 +60,9 @@ impl EngineSchematic {
     fn has_adjacent_symbol(&self, x: isize, y: isize) -> bool {
         for i in x - 1..=x + 1 {
             for j in y - 1..=y + 1 {
-                if self.cell(i, j) == Symbol {
-                    return true;
+                match self.cell(i, j) {
+                    Gear | OtherSymbol => return true,
+                    _ => continue,
                 }
             }
         }
@@ -104,6 +109,74 @@ impl EngineSchematic {
 
         part_number_sum
     }
+
+    fn adjacent_gear_indices(&self, x: isize, y: isize) -> HashSet<usize> {
+        let mut adjacent_gear_indices = HashSet::new();
+
+        for i in x - 1..=x + 1 {
+            for j in y - 1..=y + 1 {
+                if self.cell(i, j) == Gear {
+                    adjacent_gear_indices.insert(i as usize * self.width + j as usize);
+                }
+            }
+        }
+
+        adjacent_gear_indices
+    }
+
+    fn gear_ratio_sum(&self) -> u32 {
+        let mut part_numbers_by_adjacent_gear_indices = HashMap::new();
+
+        let mut current_part_number = 0;
+
+        for y in 0..self.height {
+            let mut adjacent_gear_indices = HashSet::new();
+
+            for x in 0..self.width {
+                match self.cell(x as isize, y as isize) {
+                    Digit(n) => {
+                        adjacent_gear_indices
+                            .extend(self.adjacent_gear_indices(x as isize, y as isize));
+
+                        current_part_number *= 10;
+                        current_part_number += n as u32;
+                    }
+                    _ => {
+                        for gear_index in &adjacent_gear_indices {
+                            part_numbers_by_adjacent_gear_indices
+                                .entry(*gear_index)
+                                .or_insert(Vec::new())
+                                .push(current_part_number)
+                        }
+
+                        current_part_number = 0;
+                        adjacent_gear_indices.clear();
+                    }
+                }
+            }
+
+            for gear_index in &adjacent_gear_indices {
+                part_numbers_by_adjacent_gear_indices
+                    .entry(*gear_index)
+                    .or_insert(Vec::new())
+                    .push(current_part_number)
+            }
+
+            current_part_number = 0;
+            adjacent_gear_indices.clear();
+        }
+
+        part_numbers_by_adjacent_gear_indices
+            .iter()
+            .filter_map(|(_, adjacent_part_numbers)| {
+                if adjacent_part_numbers.len() == 2 {
+                    Some(adjacent_part_numbers.iter().product::<u32>())
+                } else {
+                    None
+                }
+            })
+            .sum()
+    }
 }
 
 impl FromStr for EngineSchematic {
@@ -118,7 +191,8 @@ impl FromStr for EngineSchematic {
             .map(|c| match c {
                 '.' => Empty,
                 '0'..='9' => Digit(c.to_digit(10).unwrap() as u8),
-                _ => Symbol,
+                '*' => Gear,
+                _ => OtherSymbol,
             })
             .collect();
 
@@ -161,6 +235,16 @@ mod test {
             EngineSchematic::from_str(TEST_SCHEMATIC)
                 .unwrap()
                 .part_number_sum()
+        );
+    }
+
+    #[test]
+    fn test_gear_ratio_sum() {
+        assert_eq!(
+            467835,
+            EngineSchematic::from_str(TEST_SCHEMATIC)
+                .unwrap()
+                .gear_ratio_sum()
         );
     }
 }
