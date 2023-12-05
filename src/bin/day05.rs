@@ -1,0 +1,284 @@
+use crate::Resource::*;
+use std::env;
+use std::error::Error;
+use std::fs::File;
+use std::io::Read;
+use std::str::FromStr;
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let args: Vec<String> = env::args().collect();
+
+    if let Some(path) = args.get(1) {
+        let almanac = {
+            let mut almanac_string = String::new();
+            File::open(path)?.read_to_string(&mut almanac_string)?;
+
+            Almanac::from_str(almanac_string.as_str())?
+        };
+
+        println!("Lowest seed location: {}", almanac.lowest_seed_location());
+
+        Ok(())
+    } else {
+        Err("Usage: day05 INPUT_FILE_PATH".into())
+    }
+}
+
+struct Almanac {
+    seeds: Vec<u64>,
+    range_maps: Vec<RangeMap>,
+}
+
+impl Almanac {
+    fn map(&self, seed: u64, destination_resource: Resource) -> u64 {
+        let mut source_resource = Seed;
+        let mut value = seed;
+
+        while source_resource != destination_resource {
+            let range_map = self
+                .range_maps
+                .iter()
+                .find(|range_map| range_map.source == source_resource)
+                .unwrap();
+
+            source_resource = range_map.destination;
+            value = range_map.map(value);
+        }
+
+        value
+    }
+
+    fn lowest_seed_location(&self) -> u64 {
+        self.seeds
+            .iter()
+            .map(|seed| self.map(*seed, Location))
+            .min()
+            .unwrap()
+    }
+}
+
+impl FromStr for Almanac {
+    type Err = Box<dyn Error>;
+
+    fn from_str(string: &str) -> Result<Self, Self::Err> {
+        let mut blocks = string.split("\n\n");
+
+        let seeds = if let Some(seeds_block) = blocks.next() {
+            if let ["seeds", seeds] = seeds_block.split(": ").collect::<Vec<&str>>().as_slice() {
+                seeds
+                    .split(' ')
+                    .map(|seed| seed.parse())
+                    .collect::<Result<_, _>>()?
+            } else {
+                return Err("Could not find seeds block".into());
+            }
+        } else {
+            return Err("Empty almanac".into());
+        };
+
+        let range_maps = blocks.map(RangeMap::from_str).collect::<Result<_, _>>()?;
+
+        Ok(Almanac { seeds, range_maps })
+    }
+}
+
+struct RangeMap {
+    source: Resource,
+    destination: Resource,
+
+    ranges: Vec<Range>,
+}
+
+impl RangeMap {
+    fn map(&self, value: u64) -> u64 {
+        self.ranges
+            .iter()
+            .filter_map(|range| range.map(value))
+            .next()
+            .unwrap_or(value)
+    }
+}
+
+impl FromStr for RangeMap {
+    type Err = Box<dyn Error>;
+
+    fn from_str(string: &str) -> Result<Self, Self::Err> {
+        let mut lines = string.lines();
+
+        let (source, destination) = if let [map_type, "map:"] = lines
+            .next()
+            .ok_or::<&str>("Could not parse range map header")?
+            .split(' ')
+            .collect::<Vec<&str>>()
+            .as_slice()
+        {
+            if let [source, destination] = map_type.split("-to-").collect::<Vec<&str>>().as_slice()
+            {
+                (
+                    Resource::from_str(source)?,
+                    Resource::from_str(destination)?,
+                )
+            } else {
+                return Err("Could not parse map type".into());
+            }
+        } else {
+            return Err("Could not parse range map header".into());
+        };
+
+        Ok(RangeMap {
+            source,
+            destination,
+
+            ranges: lines.map(Range::from_str).collect::<Result<_, _>>()?,
+        })
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+enum Resource {
+    Seed,
+    Soil,
+    Fertilizer,
+    Water,
+    Light,
+    Temperature,
+    Humidity,
+    Location,
+}
+
+impl FromStr for Resource {
+    type Err = Box<dyn Error>;
+
+    fn from_str(string: &str) -> Result<Self, Self::Err> {
+        match string {
+            "seed" => Ok(Seed),
+            "soil" => Ok(Soil),
+            "fertilizer" => Ok(Fertilizer),
+            "water" => Ok(Water),
+            "light" => Ok(Light),
+            "temperature" => Ok(Temperature),
+            "humidity" => Ok(Humidity),
+            "location" => Ok(Location),
+            _ => Err("Unrecognized resource".into()),
+        }
+    }
+}
+
+struct Range {
+    source_start: u64,
+    destination_start: u64,
+
+    length: u64,
+}
+
+impl Range {
+    fn map(&self, value: u64) -> Option<u64> {
+        if value >= self.source_start && value < self.source_start + self.length {
+            Some(self.destination_start + (value - self.source_start))
+        } else {
+            None
+        }
+    }
+}
+
+impl FromStr for Range {
+    type Err = Box<dyn Error>;
+
+    fn from_str(line: &str) -> Result<Self, Self::Err> {
+        if let [destination_start, source_start, length] =
+            line.split(' ').collect::<Vec<&str>>().as_slice()
+        {
+            Ok(Range {
+                source_start: source_start.parse()?,
+                destination_start: destination_start.parse()?,
+                length: length.parse()?,
+            })
+        } else {
+            Err("Could not parse range string".into())
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use indoc::indoc;
+
+    const TEST_ALMANAC_STRING: &str = indoc! {"
+        seeds: 79 14 55 13
+
+        seed-to-soil map:
+        50 98 2
+        52 50 48
+
+        soil-to-fertilizer map:
+        0 15 37
+        37 52 2
+        39 0 15
+
+        fertilizer-to-water map:
+        49 53 8
+        0 11 42
+        42 0 7
+        57 7 4
+
+        water-to-light map:
+        88 18 7
+        18 25 70
+
+        light-to-temperature map:
+        45 77 23
+        81 45 19
+        68 64 13
+
+        temperature-to-humidity map:
+        0 69 1
+        1 0 69
+
+        humidity-to-location map:
+        60 56 37
+        56 93 4
+    "};
+
+    #[test]
+    fn test_range_map() {
+        let range_map = RangeMap::from_str(indoc! {"
+            seed-to-soil map:
+            50 98 2
+            52 50 48
+        "})
+        .unwrap();
+
+        assert_eq!(50, range_map.map(98));
+        assert_eq!(51, range_map.map(99));
+        assert_eq!(55, range_map.map(53));
+        assert_eq!(10, range_map.map(10));
+    }
+
+    #[test]
+    fn test_almanac_seed_to_soil() {
+        let almanac = Almanac::from_str(TEST_ALMANAC_STRING).unwrap();
+
+        assert_eq!(81, almanac.map(79, Soil));
+        assert_eq!(14, almanac.map(14, Soil));
+        assert_eq!(57, almanac.map(55, Soil));
+        assert_eq!(13, almanac.map(13, Soil));
+    }
+
+    #[test]
+    fn test_almanac_seed_to_location() {
+        let almanac = Almanac::from_str(TEST_ALMANAC_STRING).unwrap();
+
+        assert_eq!(82, almanac.map(79, Location));
+        assert_eq!(43, almanac.map(14, Location));
+        assert_eq!(86, almanac.map(55, Location));
+        assert_eq!(35, almanac.map(13, Location));
+    }
+
+    #[test]
+    fn test_lowest_seed_location() {
+        let almanac = Almanac::from_str(TEST_ALMANAC_STRING).unwrap();
+
+        assert_eq!(35, almanac.lowest_seed_location());
+    }
+}
