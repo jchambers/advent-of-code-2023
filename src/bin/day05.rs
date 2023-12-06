@@ -20,6 +20,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         println!("Lowest seed location: {}", almanac.lowest_seed_location());
 
+        println!(
+            "Lowest seed location using range rules: {}",
+            almanac.lowest_seed_location_ranges()
+        );
+
         Ok(())
     } else {
         Err("Usage: day05 INPUT_FILE_PATH".into())
@@ -36,6 +41,32 @@ impl Almanac {
         self.seeds
             .iter()
             .map(|seed| self.range_map.map(*seed))
+            .min()
+            .unwrap()
+    }
+
+    fn lowest_seed_location_ranges(&self) -> u64 {
+        let mut points_of_interest = HashSet::new();
+
+        for chunk in self.seeds.chunks_exact(2) {
+            if let &[start, length] = chunk {
+                // Add the start and end of the seed range as points of interest
+                points_of_interest.insert(start);
+                points_of_interest.insert(start + length);
+
+                // Add any range boundaries that occur within a seed range
+                self.range_map.ranges
+                    .iter()
+                    .flat_map(|range| vec![range.start, range.end])
+                    .filter(|&point| point >= start && point < start + length)
+                    .for_each(|point| {
+                        points_of_interest.insert(point);
+                    });
+            }
+        }
+
+        points_of_interest.iter()
+            .map(|&point| self.range_map.map(point))
             .min()
             .unwrap()
     }
@@ -392,5 +423,12 @@ mod test {
         for seed in 0..=100 {
             assert_eq!(soil_to_fertilizer.map(seed_to_soil.map(seed)), seed_to_fertilizer.map(seed));
         }
+    }
+
+    #[test]
+    fn test_lowest_seed_location_ranges() {
+        let almanac = Almanac::from_str(TEST_ALMANAC_STRING).unwrap();
+
+        assert_eq!(46, almanac.lowest_seed_location_ranges());
     }
 }
