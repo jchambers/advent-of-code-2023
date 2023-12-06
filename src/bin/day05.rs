@@ -28,32 +28,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 struct Almanac {
     seeds: Vec<u64>,
-    range_maps: Vec<RangeMap>,
+    range_map: RangeMap,
 }
 
 impl Almanac {
-    fn map(&self, seed: u64, destination_resource: Resource) -> u64 {
-        let mut source_resource = Seed;
-        let mut value = seed;
-
-        while source_resource != destination_resource {
-            let range_map = self
-                .range_maps
-                .iter()
-                .find(|range_map| range_map.source == source_resource)
-                .unwrap();
-
-            source_resource = range_map.destination;
-            value = range_map.map(value);
-        }
-
-        value
-    }
-
     fn lowest_seed_location(&self) -> u64 {
         self.seeds
             .iter()
-            .map(|seed| self.map(*seed, Location))
+            .map(|seed| self.range_map.map(*seed))
             .min()
             .unwrap()
     }
@@ -78,12 +60,26 @@ impl FromStr for Almanac {
             return Err("Empty almanac".into());
         };
 
-        let range_maps = blocks.map(RangeMap::from_str).collect::<Result<_, _>>()?;
+        let range_maps: Vec<RangeMap> = blocks.map(RangeMap::from_str).collect::<Result<_, _>>()?;
 
-        Ok(Almanac { seeds, range_maps })
+        let mut combined_range_map = range_maps
+            .iter()
+            .find(|range_map| range_map.source == Seed)
+            .ok_or("Could not find initial seed-to-* range map")?
+            .to_owned();
+
+        while let Some(next_range_map) = range_maps
+            .iter()
+            .find(|&next_range_map| next_range_map.source == combined_range_map.destination) {
+
+            combined_range_map = &combined_range_map + next_range_map;
+        }
+
+        Ok(Almanac { seeds, range_map: combined_range_map })
     }
 }
 
+#[derive(Clone)]
 struct RangeMap {
     source: Resource,
     destination: Resource,
@@ -225,6 +221,7 @@ impl FromStr for Resource {
     }
 }
 
+#[derive(Copy, Clone)]
 struct Range {
     start: u64,
 
@@ -329,26 +326,6 @@ mod test {
         assert_eq!(51, range_map.map(99));
         assert_eq!(55, range_map.map(53));
         assert_eq!(10, range_map.map(10));
-    }
-
-    #[test]
-    fn test_almanac_seed_to_soil() {
-        let almanac = Almanac::from_str(TEST_ALMANAC_STRING).unwrap();
-
-        assert_eq!(81, almanac.map(79, Soil));
-        assert_eq!(14, almanac.map(14, Soil));
-        assert_eq!(57, almanac.map(55, Soil));
-        assert_eq!(13, almanac.map(13, Soil));
-    }
-
-    #[test]
-    fn test_almanac_seed_to_location() {
-        let almanac = Almanac::from_str(TEST_ALMANAC_STRING).unwrap();
-
-        assert_eq!(82, almanac.map(79, Location));
-        assert_eq!(43, almanac.map(14, Location));
-        assert_eq!(86, almanac.map(55, Location));
-        assert_eq!(35, almanac.map(13, Location));
     }
 
     #[test]
