@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("Lowest seed location: {}", almanac.lowest_seed_location());
 
         println!(
-            "Lowest seed location using range rules: {}",
+            "Lowest seed location using seed ranges: {}",
             almanac.lowest_seed_location_ranges()
         );
 
@@ -50,11 +50,10 @@ impl Almanac {
 
         for chunk in self.seeds.chunks_exact(2) {
             if let &[start, length] = chunk {
-                // Add the start and end of the seed range as points of interest
+                // The start of the seed range itself is a candidate for a local minimum
                 points_of_interest.insert(start);
-                points_of_interest.insert(start + length);
 
-                // Add any range boundaries that occur within a seed range
+                // Add any range boundaries (i.e. discontinuities) that occur within a seed range
                 self.range_map
                     .ranges
                     .iter()
@@ -132,7 +131,7 @@ impl RangeMap {
             .unwrap_or(value)
     }
 
-    // // What input value leads to the given output value?
+    // What input value leads to the given output value?
     fn invert(&self, value: u64) -> u64 {
         self.ranges
             .iter()
