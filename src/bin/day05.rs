@@ -1,8 +1,10 @@
+use std::collections::HashSet;
 use crate::Resource::*;
 use std::env;
 use std::error::Error;
 use std::fs::File;
 use std::io::Read;
+use std::ops::Add;
 use std::str::FromStr;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -97,6 +99,15 @@ impl RangeMap {
             .next()
             .unwrap_or(value)
     }
+
+    // // What input value leads to the given output value?
+    fn invert(&self, value: u64) -> u64 {
+        self.ranges
+            .iter()
+            .filter_map(|range| range.invert(value))
+            .next()
+            .unwrap_or(value)
+    }
 }
 
 impl FromStr for RangeMap {
@@ -134,6 +145,56 @@ impl FromStr for RangeMap {
     }
 }
 
+impl Add for &RangeMap {
+    type Output = RangeMap;
+
+    fn add(self, addend: Self) -> Self::Output {
+        if self.destination != addend.source {
+            panic!("Incompatible resource types");
+        }
+
+        let mut boundaries = HashSet::new();
+        boundaries.insert(0);
+        boundaries.insert(u64::MAX);
+
+        self.ranges
+            .iter()
+            .for_each(|range| {
+                boundaries.insert(range.start);
+                boundaries.insert(range.end);
+            });
+
+        addend.ranges
+            .iter()
+            .for_each(|range| {
+                boundaries.insert(self.invert(range.start));
+                boundaries.insert(self.invert(range.end));
+            });
+
+        let mut boundaries = Vec::from_iter(boundaries);
+        boundaries.sort();
+
+        let ranges = boundaries.windows(2)
+            .filter_map(|window| if let [start, end] = window {
+                let offset = addend.map(self.map(*start)) as i64 - *start as i64;
+
+                Some(Range { start: *start, end: *end, offset })
+            } else {
+                None
+            })
+            .collect();
+
+        // TODO: "Defragment" ranges by merging adjacent ranges with identical offsets
+
+        RangeMap {
+            source: self.source,
+            destination: addend.destination,
+
+            ranges
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum Resource {
     Seed,
@@ -165,16 +226,27 @@ impl FromStr for Resource {
 }
 
 struct Range {
-    source_start: u64,
-    destination_start: u64,
+    start: u64,
 
-    length: u64,
+    // End exclusive
+    end: u64,
+
+    offset: i64,
 }
 
 impl Range {
     fn map(&self, value: u64) -> Option<u64> {
-        if value >= self.source_start && value < self.source_start + self.length {
-            Some(self.destination_start + (value - self.source_start))
+        if value >= self.start && value < self.end {
+            Some((value as i64 + self.offset) as u64)
+        } else {
+            None
+        }
+    }
+
+    // What input value, if any, leads to the given output value?
+    fn invert(&self, value: u64) -> Option<u64> {
+        if value >= (self.start as i64 + self.offset) as u64 && value < (self.end as i64 + self.offset) as u64 {
+            Some((value as i64 - self.offset) as u64)
         } else {
             None
         }
@@ -188,10 +260,14 @@ impl FromStr for Range {
         if let [destination_start, source_start, length] =
             line.split(' ').collect::<Vec<&str>>().as_slice()
         {
+            let source_start = source_start.parse()?;
+            let destination_start: u64 = destination_start.parse()?;
+            let length: u64 = length.parse()?;
+
             Ok(Range {
-                source_start: source_start.parse()?,
-                destination_start: destination_start.parse()?,
-                length: length.parse()?,
+                start: source_start,
+                end: source_start + length,
+                offset: destination_start as i64 - source_start as i64,
             })
         } else {
             Err("Could not parse range string".into())
@@ -280,5 +356,64 @@ mod test {
         let almanac = Almanac::from_str(TEST_ALMANAC_STRING).unwrap();
 
         assert_eq!(35, almanac.lowest_seed_location());
+    }
+
+    #[test]
+    fn test_range_invert() {
+        {
+            let range = Range::from_str("50 98 2").unwrap();
+
+            assert_eq!(Some(99), range.invert(51));
+            assert_eq!(None, range.invert(49));
+        }
+
+        {
+            let range = Range::from_str("52 50 48").unwrap();
+
+            assert_eq!(Some(50), range.invert(52));
+            assert_eq!(None, range.invert(100));
+        }
+    }
+
+    #[test]
+    fn test_range_map_invert() {
+        let range_map = RangeMap::from_str(indoc! {"
+            seed-to-soil map:
+            50 98 2
+            52 50 48
+        "})
+            .unwrap();
+
+        assert_eq!(99, range_map.invert(51));
+        assert_eq!(49, range_map.invert(49));
+        assert_eq!(50, range_map.invert(52));
+        assert_eq!(100, range_map.invert(100));
+    }
+
+    #[test]
+    fn test_range_map_add() {
+        let seed_to_soil= RangeMap::from_str(indoc! {"
+            seed-to-soil map:
+            50 98 2
+            52 50 48
+        "})
+            .unwrap();
+
+        let soil_to_fertilizer = RangeMap::from_str(indoc! {"
+            soil-to-fertilizer map:
+            0 15 37
+            37 52 2
+            39 0 15
+        "})
+            .unwrap();
+
+        let seed_to_fertilizer = &seed_to_soil + &soil_to_fertilizer;
+
+        assert_eq!(Seed, seed_to_fertilizer.source);
+        assert_eq!(Fertilizer, seed_to_fertilizer.destination);
+
+        for seed in 0..=100 {
+            assert_eq!(soil_to_fertilizer.map(seed_to_soil.map(seed)), seed_to_fertilizer.map(seed));
+        }
     }
 }
