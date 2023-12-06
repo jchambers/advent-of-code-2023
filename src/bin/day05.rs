@@ -1,5 +1,5 @@
-use std::collections::HashSet;
 use crate::Resource::*;
+use std::collections::HashSet;
 use std::env;
 use std::error::Error;
 use std::fs::File;
@@ -55,7 +55,8 @@ impl Almanac {
                 points_of_interest.insert(start + length);
 
                 // Add any range boundaries that occur within a seed range
-                self.range_map.ranges
+                self.range_map
+                    .ranges
                     .iter()
                     .flat_map(|range| vec![range.start, range.end])
                     .filter(|&point| point >= start && point < start + length)
@@ -65,7 +66,8 @@ impl Almanac {
             }
         }
 
-        points_of_interest.iter()
+        points_of_interest
+            .iter()
             .map(|&point| self.range_map.map(point))
             .min()
             .unwrap()
@@ -106,7 +108,10 @@ impl FromStr for Almanac {
             combined_range_map = &combined_range_map + next_range_map;
         }
 
-        Ok(Almanac { seeds, range_map: combined_range_map })
+        Ok(Almanac {
+            seeds,
+            range_map: combined_range_map,
+        })
     }
 }
 
@@ -184,30 +189,33 @@ impl Add for &RangeMap {
         boundaries.insert(0);
         boundaries.insert(u64::MAX);
 
-        self.ranges
-            .iter()
-            .for_each(|range| {
-                boundaries.insert(range.start);
-                boundaries.insert(range.end);
-            });
+        self.ranges.iter().for_each(|range| {
+            boundaries.insert(range.start);
+            boundaries.insert(range.end);
+        });
 
-        addend.ranges
-            .iter()
-            .for_each(|range| {
-                boundaries.insert(self.invert(range.start));
-                boundaries.insert(self.invert(range.end));
-            });
+        addend.ranges.iter().for_each(|range| {
+            boundaries.insert(self.invert(range.start));
+            boundaries.insert(self.invert(range.end));
+        });
 
         let mut boundaries = Vec::from_iter(boundaries);
         boundaries.sort();
 
-        let ranges = boundaries.windows(2)
-            .filter_map(|window| if let [start, end] = window {
-                let offset = addend.map(self.map(*start)) as i64 - *start as i64;
+        let ranges = boundaries
+            .windows(2)
+            .filter_map(|window| {
+                if let [start, end] = window {
+                    let offset = addend.map(self.map(*start)) as i64 - *start as i64;
 
-                Some(Range { start: *start, end: *end, offset })
-            } else {
-                None
+                    Some(Range {
+                        start: *start,
+                        end: *end,
+                        offset,
+                    })
+                } else {
+                    None
+                }
             })
             .collect();
 
@@ -217,7 +225,7 @@ impl Add for &RangeMap {
             source: self.source,
             destination: addend.destination,
 
-            ranges
+            ranges,
         }
     }
 }
@@ -273,7 +281,9 @@ impl Range {
 
     // What input value, if any, leads to the given output value?
     fn invert(&self, value: u64) -> Option<u64> {
-        if value >= (self.start as i64 + self.offset) as u64 && value < (self.end as i64 + self.offset) as u64 {
+        if value >= (self.start as i64 + self.offset) as u64
+            && value < (self.end as i64 + self.offset) as u64
+        {
             Some((value as i64 - self.offset) as u64)
         } else {
             None
@@ -390,7 +400,7 @@ mod test {
             50 98 2
             52 50 48
         "})
-            .unwrap();
+        .unwrap();
 
         assert_eq!(99, range_map.invert(51));
         assert_eq!(49, range_map.invert(49));
@@ -400,12 +410,12 @@ mod test {
 
     #[test]
     fn test_range_map_add() {
-        let seed_to_soil= RangeMap::from_str(indoc! {"
+        let seed_to_soil = RangeMap::from_str(indoc! {"
             seed-to-soil map:
             50 98 2
             52 50 48
         "})
-            .unwrap();
+        .unwrap();
 
         let soil_to_fertilizer = RangeMap::from_str(indoc! {"
             soil-to-fertilizer map:
@@ -413,7 +423,7 @@ mod test {
             37 52 2
             39 0 15
         "})
-            .unwrap();
+        .unwrap();
 
         let seed_to_fertilizer = &seed_to_soil + &soil_to_fertilizer;
 
@@ -421,7 +431,10 @@ mod test {
         assert_eq!(Fertilizer, seed_to_fertilizer.destination);
 
         for seed in 0..=100 {
-            assert_eq!(soil_to_fertilizer.map(seed_to_soil.map(seed)), seed_to_fertilizer.map(seed));
+            assert_eq!(
+                soil_to_fertilizer.map(seed_to_soil.map(seed)),
+                seed_to_fertilizer.map(seed)
+            );
         }
     }
 
