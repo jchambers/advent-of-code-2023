@@ -44,9 +44,8 @@ fn total_winnings(hands: &[Hand]) -> u64 {
 }
 
 fn total_winnings_with_jokers(hands: &[Hand]) -> u64 {
-    let mut sorted_hands = Vec::from_iter(hands.iter().map(|hand| hand.enhance_jokers()));
-
-    sorted_hands.sort();
+    let mut sorted_hands = Vec::from_iter(hands);
+    sorted_hands.sort_by(|a, b| a.cmp_with_jokers(b));
 
     sorted_hands
         .iter()
@@ -90,7 +89,7 @@ impl Hand {
         }
     }
 
-    fn enhance_jokers(&self) -> Self {
+    fn strongest_hand_type_with_jokers(&self) -> HandType {
         static REPLACEMENTS: [Card; 12] = [
             Two, Three, Four, Five, Six, Seven, Eight, Nine, Ten, Queen, King, Ace,
         ];
@@ -109,11 +108,25 @@ impl Hand {
 
                 Hand {
                     cards: replaced_cards,
-                    bid: self.bid,
-                }
+                    bid: 0,
+                }.hand_type()
             })
             .max()
             .unwrap()
+    }
+
+    fn cmp_with_jokers(&self, other: &Self) -> Ordering {
+        let hand_type_ordering =
+            self.strongest_hand_type_with_jokers().cmp(&other.strongest_hand_type_with_jokers());
+
+        if hand_type_ordering == Ordering::Equal {
+            (0..self.cards.len())
+                .map(|i| self.cards[i].cmp_with_jokers(&other.cards[i]))
+                .find(|ordering| ordering != &Ordering::Equal)
+                .unwrap_or(Ordering::Equal)
+        } else {
+            hand_type_ordering
+        }
     }
 }
 
@@ -174,6 +187,30 @@ enum Card {
     Queen,
     King,
     Ace,
+}
+
+impl Card {
+    fn strength_with_jokers(&self) -> u8 {
+        match self {
+            Jack => 1,
+            Two => 2,
+            Three => 3,
+            Four => 4,
+            Five => 5,
+            Six => 6,
+            Seven => 7,
+            Eight => 8,
+            Nine => 9,
+            Ten => 10,
+            Queen => 11,
+            King => 12,
+            Ace => 13,
+        }
+    }
+
+    fn cmp_with_jokers(&self, other: &Self) -> Ordering {
+        self.strength_with_jokers().cmp(&other.strength_with_jokers())
+    }
 }
 
 impl TryFrom<char> for Card {
@@ -250,39 +287,6 @@ mod test {
         .unwrap();
 
         assert_eq!(6440, total_winnings(&hands));
-    }
-
-    #[test]
-    fn test_enhance_jokers() {
-        assert_eq!(
-            Hand::from_str("32T3K 765").unwrap(),
-            Hand::from_str("32T3K 765").unwrap().enhance_jokers()
-        );
-
-        assert_eq!(
-            Hand::from_str("KK677 28").unwrap(),
-            Hand::from_str("KK677 28").unwrap().enhance_jokers()
-        );
-
-        assert_eq!(
-            Hand::from_str("T5555 684").unwrap(),
-            Hand::from_str("T55J5 684").unwrap().enhance_jokers()
-        );
-
-        assert_eq!(
-            Hand::from_str("KTTTT 220").unwrap(),
-            Hand::from_str("KTJJT 220").unwrap().enhance_jokers()
-        );
-
-        assert_eq!(
-            Hand::from_str("QQQQA 483").unwrap(),
-            Hand::from_str("QQQJA 483").unwrap().enhance_jokers()
-        );
-
-        assert_eq!(
-            Hand::from_str("33336 955").unwrap(),
-            Hand::from_str("J3J36 955").unwrap().enhance_jokers()
-        );
     }
 
     #[test]
