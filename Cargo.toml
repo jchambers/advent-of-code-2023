@@ -24,5 +24,8 @@ name = "day06"
 [[bin]]
 name = "day07"
 
+[[bin]]
+name = "day08"
+
 [dependencies]
 indoc = "2"
