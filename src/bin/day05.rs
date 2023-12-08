@@ -179,6 +179,7 @@ impl FromStr for RangeMap {
 impl Add for &RangeMap {
     type Output = RangeMap;
 
+    #[allow(clippy::suspicious_arithmetic_impl)]
     fn add(self, addend: Self) -> Self::Output {
         if self.destination != addend.source {
             panic!("Incompatible resource types");
