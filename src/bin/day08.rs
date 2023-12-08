@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap};
 use std::env;
 use std::error::Error;
 use std::fs::File;
@@ -59,36 +60,62 @@ impl NetworkMap {
         Some(steps)
     }
 
-    fn ghost_steps_to_exit(&self) -> Option<u32> {
-        let mut positions: Vec<&str> = self.nodes.keys()
-            .filter(|position| position.ends_with('A'))
-            .map(|position| position.as_str())
-            .collect();
-
-        positions.sort();
-
+    fn steps_to_next_ghost_exit(&self, start: &str, initial_steps: u64) -> Result<(String, u64), Box<dyn Error>> {
+        let mut position = start;
         let mut steps = 0;
-        let mut directions = self.directions.iter().cycle();
+        let mut directions = self.directions
+            .iter()
+            .cycle()
+            .skip(initial_steps as usize % self.directions.len());
 
-        while !positions.iter().all(|position| position.ends_with('Z')) {
-            println!("Positions: {:?}", positions);
-            let direction = directions.next().unwrap();
+        loop {
+            if let Some(destinations) = self.nodes.get(position) {
+                position = match directions.next().unwrap() {
+                    Direction::Left => &destinations.0,
+                    Direction::Right => &destinations.1,
+                };
 
-            for i in 0..positions.len() {
-                if let Some(destinations) = self.nodes.get(positions[i]) {
-                    positions[i] = match direction {
-                        Direction::Left => &destinations.0,
-                        Direction::Right => &destinations.1,
-                    };
-                } else {
-                    return None;
-                }
+                steps += 1;
+            } else {
+                return Err("Destination node not found".into());
             }
 
-            steps += 1;
+            if position.ends_with('Z') {
+                println!("{} @ {} => {} in {} steps", start, initial_steps, position, steps);
+                break Ok((String::from(position), steps))
+            }
+        }
+    }
+
+    fn ghost_steps_to_exit(&self) -> Result<u64, Box<dyn Error>> {
+        let mut positions: BinaryHeap<Position> = self.nodes.keys()
+            .filter(|position| position.ends_with('A'))
+            .map(|position| self.steps_to_next_ghost_exit(position, 0)
+                .map(|position| Position { node: position.0, steps: position.1 }))
+            .collect::<Result<_, _>>()?;
+
+        // A map of (node, direction index) tuples to (node, steps) tuples
+        let mut cache: HashMap<(String, u64), (String, u64)> = HashMap::new();
+
+        loop {
+            let min_steps = positions.peek().unwrap().steps;
+
+            if positions.iter().all(|position| position.steps == min_steps) {
+                break;
+            }
+
+            // Paths have not yet aligned; advance the traveler that's farthest behind to the next
+            // potential exit.
+            let earliest_position = positions.pop().unwrap();
+            let direction_index = earliest_position.steps % self.directions.len() as u64;
+
+            let (next_node, steps) = cache.entry((earliest_position.node.clone(), earliest_position.steps % self.directions.len() as u64))
+                .or_insert_with(|| self.steps_to_next_ghost_exit(&earliest_position.node, direction_index).unwrap());
+
+            positions.push(Position { node: next_node.clone(), steps: earliest_position.steps + *steps });
         }
 
-        Some(steps)
+        Ok(positions.peek().unwrap().steps)
     }
 }
 
@@ -133,6 +160,25 @@ impl TryFrom<char> for Direction {
             'R' => Ok(Direction::Right),
             _ => Err("Unexpected direction".into()),
         }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct Position {
+    node: String,
+    steps: u64,
+}
+
+impl Ord for Position {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Reverse ordering so we can build a min-heap
+        other.steps.cmp(&self.steps)
+    }
+}
+
+impl PartialOrd for Position {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -190,6 +236,6 @@ mod test {
             "})
             .unwrap();
 
-        assert_eq!(Some(6), node_map.ghost_steps_to_exit());
+        assert_eq!(6, node_map.ghost_steps_to_exit().unwrap());
     }
 }
