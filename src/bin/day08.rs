@@ -17,8 +17,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         };
 
         println!(
-            "Steps between AAA and ZZZ: {}",
-            network_map.steps_between("AAA", "ZZZ").unwrap()
+            "Human steps between AAA and ZZZ: {}",
+            network_map.human_steps_to_exit().unwrap()
+        );
+
+        println!(
+            "Ghost steps between AAA and ZZZ: {}",
+            network_map.ghost_steps_to_exit().unwrap()
         );
 
         Ok(())
@@ -33,12 +38,12 @@ struct NetworkMap {
 }
 
 impl NetworkMap {
-    fn steps_between(&self, start: &str, end: &str) -> Option<u32> {
-        let mut position = start;
+    fn human_steps_to_exit(&self) -> Option<u32> {
+        let mut position = "AAA";
         let mut steps = 0;
         let mut directions = self.directions.iter().cycle();
 
-        while position != end {
+        while position != "ZZZ" {
             if let Some(destinations) = self.nodes.get(position) {
                 position = match directions.next().unwrap() {
                     Direction::Left => &destinations.0,
@@ -49,6 +54,38 @@ impl NetworkMap {
             } else {
                 return None;
             }
+        }
+
+        Some(steps)
+    }
+
+    fn ghost_steps_to_exit(&self) -> Option<u32> {
+        let mut positions: Vec<&str> = self.nodes.keys()
+            .filter(|position| position.ends_with('A'))
+            .map(|position| position.as_str())
+            .collect();
+
+        positions.sort();
+
+        let mut steps = 0;
+        let mut directions = self.directions.iter().cycle();
+
+        while !positions.iter().all(|position| position.ends_with('Z')) {
+            println!("Positions: {:?}", positions);
+            let direction = directions.next().unwrap();
+
+            for i in 0..positions.len() {
+                if let Some(destinations) = self.nodes.get(positions[i]) {
+                    positions[i] = match direction {
+                        Direction::Left => &destinations.0,
+                        Direction::Right => &destinations.1,
+                    };
+                } else {
+                    return None;
+                }
+            }
+
+            steps += 1;
         }
 
         Some(steps)
@@ -105,7 +142,7 @@ mod test {
     use indoc::indoc;
 
     #[test]
-    fn test_steps_between() {
+    fn test_human_steps_to_exit() {
         {
             let node_map = NetworkMap::from_str(indoc! {"
                 RL
@@ -120,7 +157,7 @@ mod test {
             "})
             .unwrap();
 
-            assert_eq!(Some(2), node_map.steps_between("AAA", "ZZZ"));
+            assert_eq!(Some(2), node_map.human_steps_to_exit());
         }
 
         {
@@ -133,7 +170,26 @@ mod test {
             "})
             .unwrap();
 
-            assert_eq!(Some(6), node_map.steps_between("AAA", "ZZZ"));
+            assert_eq!(Some(6), node_map.human_steps_to_exit());
         }
+    }
+
+    #[test]
+    fn test_ghost_steps_to_exit() {
+        let node_map = NetworkMap::from_str(indoc! {"
+                LR
+
+                11A = (11B, XXX)
+                11B = (XXX, 11Z)
+                11Z = (11B, XXX)
+                22A = (22B, XXX)
+                22B = (22C, 22C)
+                22C = (22Z, 22Z)
+                22Z = (22B, 22B)
+                XXX = (XXX, XXX)
+            "})
+            .unwrap();
+
+        assert_eq!(Some(6), node_map.ghost_steps_to_exit());
     }
 }
