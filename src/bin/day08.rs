@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
@@ -147,25 +146,6 @@ impl TryFrom<char> for Direction {
             'R' => Ok(Direction::Right),
             _ => Err("Unexpected direction".into()),
         }
-    }
-}
-
-#[derive(Debug, Eq, PartialEq)]
-struct Position {
-    node: String,
-    steps: u64,
-}
-
-impl Ord for Position {
-    fn cmp(&self, other: &Self) -> Ordering {
-        // Reverse ordering so we can build a min-heap
-        other.steps.cmp(&self.steps)
-    }
-}
-
-impl PartialOrd for Position {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
     }
 }
 
