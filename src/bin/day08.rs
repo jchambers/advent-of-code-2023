@@ -1,10 +1,10 @@
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap};
-use std::env;
+use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::io::Read;
 use std::str::FromStr;
+use std::{cmp, env};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
@@ -60,13 +60,10 @@ impl NetworkMap {
         Some(steps)
     }
 
-    fn steps_to_next_ghost_exit(&self, start: &str, initial_steps: u64) -> Result<(String, u64), Box<dyn Error>> {
+    fn steps_to_first_ghost_exit(&self, start: &str) -> Result<u64, Box<dyn Error>> {
         let mut position = start;
         let mut steps = 0;
-        let mut directions = self.directions
-            .iter()
-            .cycle()
-            .skip(initial_steps as usize % self.directions.len());
+        let mut directions = self.directions.iter().cycle();
 
         loop {
             if let Some(destinations) = self.nodes.get(position) {
@@ -81,41 +78,31 @@ impl NetworkMap {
             }
 
             if position.ends_with('Z') {
-                println!("{} @ {} => {} in {} steps", start, initial_steps, position, steps);
-                break Ok((String::from(position), steps))
+                break Ok(steps);
             }
         }
     }
 
     fn ghost_steps_to_exit(&self) -> Result<u64, Box<dyn Error>> {
-        let mut positions: BinaryHeap<Position> = self.nodes.keys()
+        // Weeeell this is frustrating. This problem's solution appears to depend on noticing that
+        // the inputs have been specially crafted such that each "ghost" travels in a long cycle,
+        // and each each contains exactly one exit (i.e. there's no bouncing between exits). That
+        // means the exit time is the LCM of all of the cycle lengths.
+        //
+        // To make THAT easier, it turns out that all of the cycle lengths all have exactly two
+        // prime factors, and one of those prime factors is common to all of the cycle lengths.
+        let cycle_lengths: Vec<u64> = self
+            .nodes
+            .keys()
             .filter(|position| position.ends_with('A'))
-            .map(|position| self.steps_to_next_ghost_exit(position, 0)
-                .map(|position| Position { node: position.0, steps: position.1 }))
+            .map(|position| self.steps_to_first_ghost_exit(position))
             .collect::<Result<_, _>>()?;
 
-        // A map of (node, direction index) tuples to (node, steps) tuples
-        let mut cache: HashMap<(String, u64), (String, u64)> = HashMap::new();
-
-        loop {
-            let min_steps = positions.peek().unwrap().steps;
-
-            if positions.iter().all(|position| position.steps == min_steps) {
-                break;
-            }
-
-            // Paths have not yet aligned; advance the traveler that's farthest behind to the next
-            // potential exit.
-            let earliest_position = positions.pop().unwrap();
-            let direction_index = earliest_position.steps % self.directions.len() as u64;
-
-            let (next_node, steps) = cache.entry((earliest_position.node.clone(), earliest_position.steps % self.directions.len() as u64))
-                .or_insert_with(|| self.steps_to_next_ghost_exit(&earliest_position.node, direction_index).unwrap());
-
-            positions.push(Position { node: next_node.clone(), steps: earliest_position.steps + *steps });
-        }
-
-        Ok(positions.peek().unwrap().steps)
+        cycle_lengths
+            .iter()
+            .copied()
+            .reduce(least_common_multiple)
+            .ok_or("Could not calculate cycle lengths".into())
     }
 }
 
@@ -182,6 +169,24 @@ impl PartialOrd for Position {
     }
 }
 
+// Use the Euclidean Algorithm to find the GCD
+fn greatest_common_divisor(a: u64, b: u64) -> u64 {
+    if a == 0 {
+        b
+    } else if b == 0 {
+        a
+    } else {
+        let max = cmp::max(a, b);
+        let min = cmp::min(a, b);
+
+        greatest_common_divisor(min, max % min)
+    }
+}
+
+fn least_common_multiple(a: u64, b: u64) -> u64 {
+    (a * b) / greatest_common_divisor(a, b)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -234,8 +239,19 @@ mod test {
                 22Z = (22B, 22B)
                 XXX = (XXX, XXX)
             "})
-            .unwrap();
+        .unwrap();
 
         assert_eq!(6, node_map.ghost_steps_to_exit().unwrap());
+    }
+
+    #[test]
+    fn test_greatest_common_divisor() {
+        assert_eq!(6, greatest_common_divisor(270, 192));
+    }
+
+    #[test]
+    fn test_least_common_multiple() {
+        assert_eq!(15, least_common_multiple(3, 5));
+        assert_eq!(12, least_common_multiple(4, 6));
     }
 }
