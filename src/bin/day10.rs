@@ -21,6 +21,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             pipe_map.max_distance_from_start()?
         );
 
+        println!(
+            "Tiles enclosed by path: {}",
+            pipe_map.enclosed_tiles()?
+        );
+
         Ok(())
     } else {
         Err("Usage: day10 INPUT_FILE_PATH".into())
@@ -46,15 +51,88 @@ impl PipeMap {
     }
 
     fn loop_length(&self) -> Result<usize, Box<dyn Error>> {
+        Ok(self.path()?.iter().filter(|cell| cell.is_some()).count())
+    }
+
+    fn enclosed_tiles(&self) -> Result<usize, Box<dyn Error>> {
+        let path = self.path()?;
+
+        // The strategy here is to use the winding number algorithm
+        // (https://en.wikipedia.org/wiki/Point_in_polygon#Winding_number_algorithm), but we need to
+        // be careful about bookkeeping at the corners. For consistency, assume that we're casting
+        // horizontal rays along the bottom edge of each tile (the top would work, too, but we're
+        // just picking one arbitrarily). That means corner tiles with an "up" exit will not produce
+        // winding number changes, but tiles with a "down" exit will.
+        let winding_number_changes = {
+            let mut winding_number_changes = vec![0; path.len()];
+            let mut position = self.start_index;
+            let mut last_vertical_direction = None;
+
+            loop {
+                let next_position = match path[position].expect("Path must be contiguous") {
+                    Direction::Up => {
+                        last_vertical_direction = Some(Direction::Up);
+                        position - self.width
+                    }
+                    Direction::Down => {
+                        last_vertical_direction = Some(Direction::Down);
+                        position + self.width
+                    }
+                    Direction::Left => position - 1,
+                    Direction::Right => position + 1,
+                };
+
+                if self.pipes[position]
+                    .as_ref()
+                    .expect("Tile on path must contain pipe")
+                    .exits
+                    .contains(&Direction::Down)
+                {
+                    winding_number_changes[position] = match last_vertical_direction {
+                        Some(Direction::Up) => 1,
+                        Some(Direction::Down) => -1,
+                        _ => panic!("Must have a last known vertical direction at corners"),
+                    };
+                }
+
+                position = next_position;
+
+                if position == self.start_index {
+                    break winding_number_changes;
+                }
+            }
+        };
+
+        let mut enclosed_tiles = 0;
+
+        for y in 0..self.height {
+            let mut winding_number = 0;
+
+            for x in 0..self.width {
+                let index = self.index(x, y);
+
+                winding_number += winding_number_changes[index];
+
+                if winding_number % 2 != 0 && path[index].is_none() {
+                    enclosed_tiles += 1;
+                }
+            }
+        }
+
+        Ok(enclosed_tiles)
+    }
+
+    fn path(&self) -> Result<Vec<Option<Direction>>, Box<dyn Error>> {
         let mut position = self.start_index;
-        let mut length = 0;
         let mut direction = self.pipes[position]
             .as_ref()
             .ok_or("Could not find starting pipe")?
             .exits[0];
 
-        loop {
-            length += 1;
+        let mut path = vec![None; self.pipes.len()];
+
+        while path[position].is_none() {
+            path[position] = Some(direction);
 
             let came_from = -direction;
 
@@ -72,11 +150,9 @@ impl PipeMap {
                 .iter()
                 .find(|exit| exit != &&came_from)
                 .ok_or("Could not find pipe exit")?;
-
-            if position == self.start_index {
-                break Ok(length);
-            }
         }
+
+        Ok(path)
     }
 
     fn index(&self, x: usize, y: usize) -> usize {
@@ -282,6 +358,79 @@ mod test {
             .unwrap();
 
             assert_eq!(8, pipe_map.max_distance_from_start().unwrap());
+        }
+    }
+
+    #[test]
+    fn test_enclosed_tiles() {
+        {
+            let pipe_map = PipeMap::from_str(indoc! {"
+                ...........
+                .S-------7.
+                .|F-----7|.
+                .||.....||.
+                .||.....||.
+                .|L-7.F-J|.
+                .|..|.|..|.
+                .L--J.L--J.
+                ...........
+            "})
+            .unwrap();
+
+            assert_eq!(4, pipe_map.enclosed_tiles().unwrap());
+        }
+
+        {
+            let pipe_map = PipeMap::from_str(indoc! {"
+                ..........
+                .S------7.
+                .|F----7|.
+                .||....||.
+                .||....||.
+                .|L-7F-J|.
+                .|..||..|.
+                .L--JL--J.
+                ..........
+            "})
+            .unwrap();
+
+            assert_eq!(4, pipe_map.enclosed_tiles().unwrap());
+        }
+
+        {
+            let pipe_map = PipeMap::from_str(indoc! {"
+                .F----7F7F7F7F-7....
+                .|F--7||||||||FJ....
+                .||.FJ||||||||L7....
+                FJL7L7LJLJ||LJ.L-7..
+                L--J.L7...LJS7F-7L7.
+                ....F-J..F7FJ|L7L7L7
+                ....L7.F7||L7|.L7L7|
+                .....|FJLJ|FJ|F7|.LJ
+                ....FJL-7.||.||||...
+                ....L---J.LJ.LJLJ...
+            "})
+            .unwrap();
+
+            assert_eq!(8, pipe_map.enclosed_tiles().unwrap());
+        }
+
+        {
+            let pipe_map = PipeMap::from_str(indoc! {"
+                FF7FSF7F7F7F7F7F---7
+                L|LJ||||||||||||F--J
+                FL-7LJLJ||||||LJL-77
+                F--JF--7||LJLJ7F7FJ-
+                L---JF-JLJ.||-FJLJJ7
+                |F|F-JF---7F7-L7L|7|
+                |FFJF7L7F-JF7|JL---7
+                7-L-JL7||F7|L7F-7F7|
+                L.L7LFJ|||||FJL7||LJ
+                L7JLJL-JLJLJL--JLJ.L
+            "})
+            .unwrap();
+
+            assert_eq!(10, pipe_map.enclosed_tiles().unwrap());
         }
     }
 }
