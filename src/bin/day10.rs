@@ -16,15 +16,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             PipeMap::from_str(map_string.as_str())?
         };
 
-        println!(
-            "Max distance from start: {}",
-            pipe_map.max_distance_from_start()?
-        );
-
-        println!(
-            "Tiles enclosed by path: {}",
-            pipe_map.enclosed_tiles()?
-        );
+        println!("Max distance from start: {}", pipe_map.max_distance_from_start()?);
+        println!("Tiles enclosed by path: {}", pipe_map.enclosed_tiles()?);
 
         Ok(())
     } else {
@@ -34,16 +27,21 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 struct PipeMap {
     pipes: Vec<Option<Pipe>>,
-
     width: usize,
-    height: usize,
-
     start_index: usize,
 }
 
 impl PipeMap {
+    fn height(&self) -> usize {
+        self.pipes.len() / self.width
+    }
+
+    fn index(&self, x: usize, y: usize) -> usize {
+        x + (y * self.width)
+    }
+
     fn pipe(&self, x: isize, y: isize) -> &Option<Pipe> {
-        if x < 0 || x >= self.width as isize || y < 0 || y >= self.height as isize {
+        if x < 0 || x >= self.width as isize || y < 0 || y >= self.height() as isize {
             &None
         } else {
             &self.pipes[self.index(x as usize, y as usize)]
@@ -105,7 +103,7 @@ impl PipeMap {
 
         let mut enclosed_tiles = 0;
 
-        for y in 0..self.height {
+        for y in 0..self.height() {
             let mut winding_number = 0;
 
             for x in 0..self.width {
@@ -155,10 +153,6 @@ impl PipeMap {
         Ok(path)
     }
 
-    fn index(&self, x: usize, y: usize) -> usize {
-        x + (y * self.width)
-    }
-
     fn max_distance_from_start(&self) -> Result<usize, Box<dyn Error>> {
         Ok((self.loop_length()? + 1) / 2)
     }
@@ -178,35 +172,15 @@ impl FromStr for PipeMap {
             .flat_map(|line| line.chars())
             .filter(|c| !c.is_whitespace())
             .map(|c| match c {
-                '|' => Some(Pipe {
-                    exits: [Direction::Up, Direction::Down],
-                }),
-                '-' => Some(Pipe {
-                    exits: [Direction::Left, Direction::Right],
-                }),
-                'L' => Some(Pipe {
-                    exits: [Direction::Up, Direction::Right],
-                }),
-                'J' => Some(Pipe {
-                    exits: [Direction::Up, Direction::Left],
-                }),
-                '7' => Some(Pipe {
-                    exits: [Direction::Down, Direction::Left],
-                }),
-                'F' => Some(Pipe {
-                    exits: [Direction::Down, Direction::Right],
-                }),
                 // We'll treat the starting position as a special case
-                'S' | '.' => None,
-                _ => panic!(),
+                'S' | '.' => Ok(None),
+                _ => Pipe::try_from(c).map(Some),
             })
-            .collect();
+            .collect::<Result<_, _>>()?;
 
-        let height = if pipes.len() % width == 0 {
-            pipes.len() / width
-        } else {
+        if pipes.len() % width != 0 {
             return Err("Inconsistent row width".into());
-        };
+        }
 
         let start_index = string
             .chars()
@@ -221,50 +195,50 @@ impl FromStr for PipeMap {
 
         let mut pipe_map = PipeMap {
             pipes,
-
             width,
-            height,
-
             start_index,
         };
 
-        let start_has_left_exit = pipe_map
-            .pipe(start_x - 1, start_y)
-            .as_ref()
-            .map(|pipe| pipe.exits.contains(&Direction::Right))
-            .unwrap_or(false);
+        let start_exits = {
+            let mut start_exits = Vec::with_capacity(2);
 
-        let start_has_right_exit = pipe_map
-            .pipe(start_x + 1, start_y)
-            .as_ref()
-            .map(|pipe| pipe.exits.contains(&Direction::Left))
-            .unwrap_or(false);
+            if pipe_map
+                .pipe(start_x, start_y - 1)
+                .as_ref()
+                .map(|pipe| pipe.exits.contains(&Direction::Down))
+                .unwrap_or(false) {
 
-        let start_has_up_exit = pipe_map
-            .pipe(start_x, start_y - 1)
-            .as_ref()
-            .map(|pipe| pipe.exits.contains(&Direction::Down))
-            .unwrap_or(false);
+                start_exits.push(Direction::Up);
+            }
 
-        let start_has_down_exit = pipe_map
-            .pipe(start_x, start_y + 1)
-            .as_ref()
-            .map(|pipe| pipe.exits.contains(&Direction::Up))
-            .unwrap_or(false);
+            if pipe_map
+                .pipe(start_x, start_y + 1)
+                .as_ref()
+                .map(|pipe| pipe.exits.contains(&Direction::Up))
+                .unwrap_or(false) {
 
-        let start_exits = match (
-            start_has_left_exit,
-            start_has_right_exit,
-            start_has_up_exit,
-            start_has_down_exit,
-        ) {
-            (false, false, true, true) => [Direction::Up, Direction::Down],
-            (true, true, false, false) => [Direction::Left, Direction::Right],
-            (false, true, true, false) => [Direction::Up, Direction::Right],
-            (true, false, true, false) => [Direction::Up, Direction::Left],
-            (true, false, false, true) => [Direction::Down, Direction::Left],
-            (false, true, false, true) => [Direction::Down, Direction::Right],
-            _ => return Err("Could not assign directions to starting pipe".into()),
+                start_exits.push(Direction::Down);
+            }
+
+            if pipe_map
+                .pipe(start_x - 1, start_y)
+                .as_ref()
+                .map(|pipe| pipe.exits.contains(&Direction::Right))
+                .unwrap_or(false) {
+
+                start_exits.push(Direction::Left);
+            }
+
+            if pipe_map
+                .pipe(start_x + 1, start_y)
+                .as_ref()
+                .map(|pipe| pipe.exits.contains(&Direction::Left))
+                .unwrap_or(false) {
+
+                start_exits.push(Direction::Right);
+            }
+
+            start_exits.as_slice().try_into()?
         };
 
         pipe_map.pipes[start_index] = Some(Pipe { exits: start_exits });
@@ -275,6 +249,22 @@ impl FromStr for PipeMap {
 
 struct Pipe {
     exits: [Direction; 2],
+}
+
+impl TryFrom<char> for Pipe {
+    type Error = Box<dyn Error>;
+
+    fn try_from(c: char) -> Result<Self, Self::Error> {
+        match c {
+            '|' => Ok(Pipe { exits: [Direction::Up, Direction::Down] }),
+            '-' => Ok(Pipe { exits: [Direction::Left, Direction::Right] }),
+            'L' => Ok(Pipe { exits: [Direction::Up, Direction::Right] }),
+            'J' => Ok(Pipe { exits: [Direction::Up, Direction::Left] }),
+            '7' => Ok(Pipe { exits: [Direction::Down, Direction::Left] }),
+            'F' => Ok(Pipe { exits: [Direction::Down, Direction::Right] }),
+            _ => Err("Unrecognized pipe type".into()),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Eq, PartialEq)]
