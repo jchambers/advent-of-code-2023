@@ -15,10 +15,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             TelescopeImage::from_str(image_string.as_str())?
         };
 
-        println!(
-            "Sum of shortest distances: {}",
-            telescope_image.min_distance_sum()
-        );
+        for expansion_factor in [2, 1_000_000] {
+            println!(
+                "Sum of shortest distances with expansion factor of {}: {}",
+                expansion_factor,
+                telescope_image.min_distance_sum(expansion_factor)
+            );
+        }
 
         Ok(())
     } else {
@@ -27,12 +30,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 struct TelescopeImage {
-    galaxies: Vec<(u32, u32)>,
+    galaxies: Vec<(u64, u64)>,
 }
 
 impl TelescopeImage {
-    fn min_distance_sum(&self) -> u32 {
-        let expanded_galaxy_positions = self.expanded_galaxy_positions();
+    fn min_distance_sum(&self, expansion_factor: u64) -> u64 {
+        let expanded_galaxy_positions = self.expanded_galaxy_positions(expansion_factor);
 
         (0..expanded_galaxy_positions.len() - 1)
             .flat_map(|start| {
@@ -45,7 +48,7 @@ impl TelescopeImage {
             .sum()
     }
 
-    fn expanded_galaxy_positions(&self) -> Vec<(u32, u32)> {
+    fn expanded_galaxy_positions(&self, expansion_factor: u64) -> Vec<(u64, u64)> {
         let empty_columns = self.empty_columns();
         let empty_rows = self.empty_rows();
 
@@ -54,36 +57,37 @@ impl TelescopeImage {
         self.galaxies
             .iter()
             .map(|(x, y)| {
-                let delta_x = empty_columns.iter().filter(|&c| c < x).count();
+                let delta_x =
+                    empty_columns.iter().filter(|&c| c < x).count() as u64 * (expansion_factor - 1);
+                let delta_y =
+                    empty_rows.iter().filter(|&r| r < y).count() as u64 * (expansion_factor - 1);
 
-                let delta_y = empty_rows.iter().filter(|&r| r < y).count();
-
-                (*x + delta_x as u32, *y + delta_y as u32)
+                (*x + delta_x, *y + delta_y)
             })
             .collect()
     }
 
-    fn empty_rows(&self) -> Vec<u32> {
+    fn empty_rows(&self) -> Vec<u64> {
         Self::empty_spans(
             self.galaxies
                 .iter()
                 .map(|&(_, y)| y)
-                .collect::<Vec<u32>>()
+                .collect::<Vec<u64>>()
                 .as_slice(),
         )
     }
 
-    fn empty_columns(&self) -> Vec<u32> {
+    fn empty_columns(&self) -> Vec<u64> {
         Self::empty_spans(
             self.galaxies
                 .iter()
                 .map(|&(x, _)| x)
-                .collect::<Vec<u32>>()
+                .collect::<Vec<u64>>()
                 .as_slice(),
         )
     }
 
-    fn empty_spans(populated_positions: &[u32]) -> Vec<u32> {
+    fn empty_spans(populated_positions: &[u64]) -> Vec<u64> {
         if let Some(&max) = populated_positions.iter().max() {
             let mut empty_spans = vec![true; (max + 1) as usize];
 
@@ -95,7 +99,7 @@ impl TelescopeImage {
                 .iter()
                 .enumerate()
                 .filter(|(_, empty)| **empty)
-                .map(|(position, _)| position as u32)
+                .map(|(position, _)| position as u64)
                 .collect()
         } else {
             vec![]
@@ -114,7 +118,7 @@ impl FromStr for TelescopeImage {
                 line.chars()
                     .enumerate()
                     .filter(|(_, c)| c == &'#')
-                    .map(move |(x, _)| (x as u32, y as u32))
+                    .map(move |(x, _)| (x as u64, y as u64))
             })
             .collect();
 
@@ -162,11 +166,10 @@ mod test {
 
     #[test]
     fn test_min_distance_sum() {
-        assert_eq!(
-            374,
-            TelescopeImage::from_str(TEST_IMAGE_STRING)
-                .unwrap()
-                .min_distance_sum()
-        );
+        let telecope_image = TelescopeImage::from_str(TEST_IMAGE_STRING).unwrap();
+
+        assert_eq!(374, telecope_image.min_distance_sum(2));
+        assert_eq!(1030, telecope_image.min_distance_sum(10));
+        assert_eq!(8410, telecope_image.min_distance_sum(100));
     }
 }
