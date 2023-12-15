@@ -1,5 +1,6 @@
 use std::env;
 use std::error::Error;
+use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::Read;
 use std::str::FromStr;
@@ -20,20 +21,25 @@ fn main() -> Result<(), Box<dyn Error>> {
             parabolic_dish.tilt(Direction::North).load()
         );
 
+        println!(
+            "Load after 1,000,000,000 spins: {}",
+            parabolic_dish.spin_cycle(1_000_000_000).load()
+        );
+
         Ok(())
     } else {
         Err("Usage: day13 INPUT_FILE_PATH".into())
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 struct ParabolicDish {
     width: usize,
     tiles: Vec<Tile>,
 }
 
 impl ParabolicDish {
-    fn tilt(self, direction: Direction) -> Self {
+    fn tilt(&self, direction: Direction) -> Self {
         let mut tilted_dish: Vec<Tile> = self
             .tiles
             .iter()
@@ -100,6 +106,33 @@ impl ParabolicDish {
         }
     }
 
+    fn spin(&self) -> Self {
+        self.tilt(Direction::North)
+            .tilt(Direction::West)
+            .tilt(Direction::South)
+            .tilt(Direction::East)
+    }
+
+    fn spin_cycle(&self, iterations: usize) -> Self {
+        let mut previous_states: Vec<Self> = vec![self.clone()];
+
+        for _ in 0..iterations {
+            let next = previous_states.last().unwrap().spin();
+
+            if previous_states.contains(&next) {
+                let cycle_start = previous_states.iter().position(|d| d == &next).unwrap();
+                let cycle_len = previous_states.len() - cycle_start;
+
+                return previous_states[cycle_start + ((iterations - cycle_start) % cycle_len)]
+                    .clone();
+            }
+
+            previous_states.push(next);
+        }
+
+        previous_states.pop().unwrap()
+    }
+
     fn height(&self) -> usize {
         self.tiles.len() / self.width
     }
@@ -144,7 +177,26 @@ impl FromStr for ParabolicDish {
     }
 }
 
-#[derive(Eq, PartialEq)]
+impl Display for ParabolicDish {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.tiles.chunks_exact(self.width).try_for_each(|row| {
+            let line: String = row
+                .iter()
+                .map(|tile| match tile {
+                    Tile::Empty => '.',
+                    Tile::Round => 'O',
+                    Tile::Cube => '#',
+                })
+                .collect();
+
+            writeln!(f, "{}", line)
+        })?;
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
 enum Direction {
     North,
     South,
@@ -229,5 +281,93 @@ mod test {
         .tilt(Direction::North);
 
         assert_eq!(136, tilted_dish.load());
+    }
+
+    #[test]
+    fn test_spin() {
+        let spun_dish = ParabolicDish::from_str(indoc! {"
+            O....#....
+            O.OO#....#
+            .....##...
+            OO.#O....O
+            .O.....O#.
+            O.#..O.#.#
+            ..O..#O..O
+            .......O..
+            #....###..
+            #OO..#....
+        "})
+        .unwrap()
+        .spin();
+
+        let expected_dish = ParabolicDish::from_str(indoc! {"
+            .....#....
+            ....#...O#
+            ...OO##...
+            .OO#......
+            .....OOO#.
+            .O#...O#.#
+            ....O#....
+            ......OOOO
+            #...O###..
+            #..OO#....
+        "})
+        .unwrap();
+
+        assert_eq!(expected_dish, spun_dish);
+    }
+
+    #[test]
+    fn test_spin_cycle() {
+        let spun_dish = ParabolicDish::from_str(indoc! {"
+            O....#....
+            O.OO#....#
+            .....##...
+            OO.#O....O
+            .O.....O#.
+            O.#..O.#.#
+            ..O..#O..O
+            .......O..
+            #....###..
+            #OO..#....
+        "})
+        .unwrap()
+        .spin_cycle(3);
+
+        let expected_dish = ParabolicDish::from_str(indoc! {"
+            .....#....
+            ....#...O#
+            .....##...
+            ..O#......
+            .....OOO#.
+            .O#...O#.#
+            ....O#...O
+            .......OOO
+            #...O###.O
+            #.OOO#...O
+        "})
+        .unwrap();
+
+        assert_eq!(expected_dish, spun_dish);
+    }
+
+    #[test]
+    fn test_spin_cycle_long() {
+        let spun_dish = ParabolicDish::from_str(indoc! {"
+            O....#....
+            O.OO#....#
+            .....##...
+            OO.#O....O
+            .O.....O#.
+            O.#..O.#.#
+            ..O..#O..O
+            .......O..
+            #....###..
+            #OO..#....
+        "})
+        .unwrap()
+        .spin_cycle(1_000_000_000);
+
+        assert_eq!(64, spun_dish.load());
     }
 }
