@@ -31,7 +31,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             "Sum of scores with smudged mirrors: {}",
             mirror_fields
                 .iter()
-                .inspect(|_| println!("Field"))
                 .map(|mirror_field| mirror_field.smudged_reflection().unwrap().score())
                 .sum::<u32>()
         );
@@ -49,11 +48,11 @@ struct MirrorField {
 
 impl MirrorField {
     fn reflection(&self) -> Option<Reflection> {
-        self.find_partition_row()
+        self.find_partition_row(None)
             .map(Reflection::Horizontal)
             .or_else(|| {
                 self.transpose()
-                    .find_partition_row()
+                    .find_partition_row(None)
                     .map(Reflection::Vertical)
             })
     }
@@ -65,12 +64,34 @@ impl MirrorField {
             let mut smudged_tiles = self.tiles.clone();
             smudged_tiles[smudged_tile] = !self.tiles[smudged_tile];
 
-            let smudged_reflection = MirrorField {
+            let smudged_field = MirrorField {
                 width: self.width,
                 tiles: smudged_tiles,
-            }.reflection();
+            };
 
-            if smudged_reflection.is_some() && smudged_reflection != original_reflection {
+            let ignore_row = if let Some(Reflection::Horizontal(r)) = original_reflection {
+                Some(r)
+            } else {
+                None
+            };
+
+            let ignore_col = if let Some(Reflection::Vertical(c)) = original_reflection {
+                Some(c)
+            } else {
+                None
+            };
+
+            let smudged_reflection = smudged_field
+                .find_partition_row(ignore_row)
+                .map(Reflection::Horizontal)
+                .or_else(|| {
+                    smudged_field
+                        .transpose()
+                        .find_partition_row(ignore_col)
+                        .map(Reflection::Vertical)
+                });
+
+            if smudged_reflection.is_some() {
                 return smudged_reflection;
             }
         }
@@ -78,10 +99,14 @@ impl MirrorField {
         None
     }
 
-    fn find_partition_row(&self) -> Option<usize> {
+    fn find_partition_row(&self, ignore_row: Option<usize>) -> Option<usize> {
         let height = self.tiles.len() / self.width;
 
         for row in 1..height {
+            if ignore_row == Some(row) {
+                continue;
+            }
+
             let mut top = row - 1;
             let mut bottom = row;
 
@@ -243,8 +268,8 @@ mod test {
                 ..##..##.
                 #.#.##.#.
             "})
-                .unwrap()
-                .smudged_reflection()
+            .unwrap()
+            .smudged_reflection()
         );
 
         assert_eq!(
@@ -258,8 +283,8 @@ mod test {
                 ..##..###
                 #....#..#
             "})
-                .unwrap()
-                .smudged_reflection()
+            .unwrap()
+            .smudged_reflection()
         );
     }
 
