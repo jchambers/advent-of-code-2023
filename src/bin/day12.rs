@@ -22,12 +22,21 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .sum::<usize>()
         );
 
+        println!(
+            "Sum of possible states with unfolded groups: {}",
+            spring_groups
+                .iter()
+                .map(|spring_group| spring_group.possible_arrangements_unfolded())
+                .sum::<usize>()
+        );
+
         Ok(())
     } else {
         Err("Usage: day12 INPUT_FILE_PATH".into())
     }
 }
 
+#[derive(Debug, Eq, PartialEq)]
 struct SpringGroup {
     states: Vec<SpringState>,
     group_sizes: Vec<usize>,
@@ -36,6 +45,27 @@ struct SpringGroup {
 impl SpringGroup {
     fn possible_arrangements(&self) -> usize {
         Self::possible_sub_arrangements(&self.states, &self.group_sizes)
+    }
+
+    fn possible_arrangements_unfolded(&self) -> usize {
+        self.unfold().possible_arrangements()
+    }
+
+    fn unfold(&self) -> Self {
+        let mut unfolded_states = self.states.clone();
+        let mut unfolded_group_sizes = self.group_sizes.clone();
+
+        for _ in 0..4 {
+            unfolded_states.push(SpringState::Unknown);
+            unfolded_states.extend_from_slice(self.states.as_slice());
+
+            unfolded_group_sizes.extend_from_slice(self.group_sizes.as_slice());
+        }
+
+        Self {
+            states: unfolded_states,
+            group_sizes: unfolded_group_sizes,
+        }
     }
 
     fn possible_sub_arrangements(states: &[SpringState], group_sizes: &[usize]) -> usize {
@@ -312,5 +342,63 @@ mod test {
                 _ => panic!(),
             })
             .collect()
+    }
+
+    #[test]
+    fn test_unfold() {
+        assert_eq!(
+            SpringGroup::from_str(".#?.#?.#?.#?.# 1,1,1,1,1").unwrap(),
+            SpringGroup::from_str(".# 1").unwrap().unfold()
+        );
+
+        assert_eq!(
+            SpringGroup::from_str("???.###????.###????.###????.###????.### 1,1,3,1,1,3,1,1,3,1,1,3,1,1,3").unwrap(),
+            SpringGroup::from_str("???.### 1,1,3").unwrap().unfold()
+        );
+    }
+
+    #[test]
+    fn test_possible_states_unfolded() {
+        assert_eq!(
+            1,
+            SpringGroup::from_str("???.### 1,1,3")
+                .unwrap()
+                .possible_arrangements_unfolded()
+        );
+
+        assert_eq!(
+            16384,
+            SpringGroup::from_str(".??..??...?##. 1,1,3")
+                .unwrap()
+                .possible_arrangements_unfolded()
+        );
+
+        assert_eq!(
+            1,
+            SpringGroup::from_str("?#?#?#?#?#?#?#? 1,3,1,6")
+                .unwrap()
+                .possible_arrangements_unfolded()
+        );
+
+        assert_eq!(
+            16,
+            SpringGroup::from_str("????.#...#... 4,1,1")
+                .unwrap()
+                .possible_arrangements_unfolded()
+        );
+
+        assert_eq!(
+            2500,
+            SpringGroup::from_str("????.######..#####. 1,6,5")
+                .unwrap()
+                .possible_arrangements_unfolded()
+        );
+
+        assert_eq!(
+            506250,
+            SpringGroup::from_str("?###???????? 3,2,1")
+                .unwrap()
+                .possible_arrangements_unfolded()
+        );
     }
 }
