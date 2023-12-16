@@ -36,17 +36,17 @@ struct BeamContraption {
 impl BeamContraption {
     fn energized_tiles(&self, start: BeamHead) -> usize {
         let mut beam_heads = vec![start];
-        let mut explored_tiles = vec![vec![]; self.tiles.len()];
+        let mut explored_tiles = vec![0u8; self.tiles.len()];
 
         while let Some(beam_head) = beam_heads.pop() {
             let (x, y) = beam_head.position;
 
-            if explored_tiles[self.index(x, y)].contains(&beam_head.heading) {
+            if explored_tiles[self.index(x, y)] & beam_head.heading.bit_mask() != 0 {
                 // Avoid infinite loops!
                 continue;
             }
 
-            explored_tiles[self.index(x, y)].push(beam_head.heading);
+            explored_tiles[self.index(x, y)] |= beam_head.heading.bit_mask();
 
             match self.tiles[self.index(x, y)] {
                 Tile::Empty => {
@@ -115,7 +115,7 @@ impl BeamContraption {
 
         explored_tiles
             .iter()
-            .filter(|directions| !directions.is_empty())
+            .filter(|directions| directions != &&0)
             .count()
     }
 
@@ -276,6 +276,17 @@ enum Direction {
     Down,
     Left,
     Right,
+}
+
+impl Direction {
+    fn bit_mask(&self) -> u8 {
+        match self {
+            Direction::Up => 1 << 0,
+            Direction::Down => 1 << 1,
+            Direction::Left => 1 << 2,
+            Direction::Right => 1 << 3,
+        }
+    }
 }
 
 #[cfg(test)]
