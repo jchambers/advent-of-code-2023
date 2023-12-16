@@ -45,7 +45,7 @@ struct LightBoxHashMap {
 
 impl LightBoxHashMap {
     fn apply_instruction(&mut self, instruction: &str) -> Result<(), Box<dyn Error>> {
-        if let Some(label) = instruction.strip_suffix("-") {
+        if let Some(label) = instruction.strip_suffix('-') {
             let hash = Self::hash(label);
 
             if let Some(position) = self.boxes[hash].iter().position(|lens| lens.label == label) {
@@ -78,7 +78,7 @@ impl LightBoxHashMap {
 
     fn hash(str: &str) -> usize {
         str.bytes()
-            .fold(0, |acc, b| ((acc as usize + b as usize) * 17) % 256)
+            .fold(0, |acc, b| ((acc + b as usize) * 17) % 256)
     }
 
     fn focusing_power(&self) -> u32 {
