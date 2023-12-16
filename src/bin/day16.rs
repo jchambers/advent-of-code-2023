@@ -15,7 +15,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             BeamContraption::from_str(contraption_string.as_str())?
         };
 
-        println!("Energized tiles: {}", contraption.energized_tiles());
+        println!(
+            "Energized tiles: {}",
+            contraption.energized_tiles(BeamHead::default())
+        );
+
+        println!("Max energized tiles: {}", contraption.max_energized_tiles());
 
         Ok(())
     } else {
@@ -29,8 +34,8 @@ struct BeamContraption {
 }
 
 impl BeamContraption {
-    fn energized_tiles(&self) -> usize {
-        let mut beam_heads = vec![BeamHead::default()];
+    fn energized_tiles(&self, start: BeamHead) -> usize {
+        let mut beam_heads = vec![start];
         let mut explored_tiles = vec![vec![]; self.tiles.len()];
 
         while let Some(beam_head) = beam_heads.pop() {
@@ -112,6 +117,40 @@ impl BeamContraption {
             .iter()
             .filter(|directions| !directions.is_empty())
             .count()
+    }
+
+    fn max_energized_tiles(&self) -> usize {
+        let mut starting_positions = Vec::with_capacity(self.width * 2 + self.height() * 2);
+
+        (0..self.width).for_each(|x| {
+            starting_positions.push(BeamHead {
+                position: (x, 0),
+                heading: Direction::Down,
+            });
+
+            starting_positions.push(BeamHead {
+                position: (x, self.height() - 1),
+                heading: Direction::Up,
+            });
+        });
+
+        (0..self.height()).for_each(|y| {
+            starting_positions.push(BeamHead {
+                position: (0, y),
+                heading: Direction::Right,
+            });
+
+            starting_positions.push(BeamHead {
+                position: (self.width - 1, y),
+                heading: Direction::Left,
+            });
+        });
+
+        starting_positions
+            .into_iter()
+            .map(|starting_position| self.energized_tiles(starting_position))
+            .max()
+            .unwrap_or(0)
     }
 
     fn advance_beam(&self, beam_head: &BeamHead, heading: Direction) -> Option<BeamHead> {
@@ -244,9 +283,7 @@ mod test {
     use super::*;
     use indoc::indoc;
 
-    #[test]
-    fn test_energized_tiles() {
-        let contraption = BeamContraption::from_str(indoc! {r"
+    const TEST_CONTRAPTION_STRING: &str = indoc! {r"
             .|...\....
             |.-.\.....
             .....|-...
@@ -257,9 +294,19 @@ mod test {
             .-.-/..|..
             .|....-|.\
             ..//.|....
-        "})
-        .unwrap();
+    "};
 
-        assert_eq!(46, contraption.energized_tiles());
+    #[test]
+    fn test_energized_tiles() {
+        let contraption = BeamContraption::from_str(TEST_CONTRAPTION_STRING).unwrap();
+
+        assert_eq!(46, contraption.energized_tiles(BeamHead::default()));
+    }
+
+    #[test]
+    fn test_max_energized_tiles() {
+        let contraption = BeamContraption::from_str(TEST_CONTRAPTION_STRING).unwrap();
+
+        assert_eq!(51, contraption.max_energized_tiles());
     }
 }
