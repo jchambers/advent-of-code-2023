@@ -55,26 +55,26 @@ impl BeamContraption {
                     }
                 }
                 Tile::MirrorLeft => {
-                    let advanced = match beam_head.heading {
-                        Direction::Up => self.advance_beam(&beam_head, Direction::Left),
-                        Direction::Down => self.advance_beam(&beam_head, Direction::Right),
-                        Direction::Left => self.advance_beam(&beam_head, Direction::Up),
-                        Direction::Right => self.advance_beam(&beam_head, Direction::Down),
+                    let direction = match beam_head.heading {
+                        Direction::Up => Direction::Left,
+                        Direction::Down => Direction::Right,
+                        Direction::Left => Direction::Up,
+                        Direction::Right => Direction::Down,
                     };
 
-                    if let Some(advanced) = advanced {
+                    if let Some(advanced) = self.advance_beam(&beam_head, direction) {
                         beam_heads.push(advanced);
                     }
                 }
                 Tile::MirrorRight => {
-                    let advanced = match beam_head.heading {
-                        Direction::Up => self.advance_beam(&beam_head, Direction::Right),
-                        Direction::Down => self.advance_beam(&beam_head, Direction::Left),
-                        Direction::Left => self.advance_beam(&beam_head, Direction::Down),
-                        Direction::Right => self.advance_beam(&beam_head, Direction::Up),
+                    let direction = match beam_head.heading {
+                        Direction::Up => Direction::Right,
+                        Direction::Down => Direction::Left,
+                        Direction::Left => Direction::Down,
+                        Direction::Right => Direction::Up,
                     };
 
-                    if let Some(advanced) = advanced {
+                    if let Some(advanced) = self.advance_beam(&beam_head, direction) {
                         beam_heads.push(advanced);
                     }
                 }
