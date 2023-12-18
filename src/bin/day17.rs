@@ -19,8 +19,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         };
 
         println!(
-            "Minimum cooling along path to exit: {}",
-            cooling_map.minimum_heat_loss()
+            "Minimum cooling along path to exit with small crucibles: {}",
+            cooling_map.minimum_heat_loss_small_crucible()
+        );
+
+        println!(
+            "Minimum cooling along path to exit with ultra crucibles: {}",
+            cooling_map.minimum_heat_loss_ultra_crucible()
         );
 
         Ok(())
@@ -35,7 +40,15 @@ struct CoolingMap {
 }
 
 impl CoolingMap {
-    fn minimum_heat_loss(&self) -> u32 {
+    fn minimum_heat_loss_small_crucible(&self) -> u32 {
+        self.minimum_heat_loss(1, 3)
+    }
+
+    fn minimum_heat_loss_ultra_crucible(&self) -> u32 {
+        self.minimum_heat_loss(4, 10)
+    }
+
+    fn minimum_heat_loss(&self, min_travel_distance: usize, max_travel_distance: usize) -> u32 {
         let mut exploration_queue = BinaryHeap::new();
         let mut best_cooling_values = vec![[u32::MAX, u32::MAX]; self.losses.len()];
         best_cooling_values[0] = [0, 0];
@@ -67,7 +80,7 @@ impl CoolingMap {
                 continue;
             }
 
-            self.next_exploration_positions(&destination)
+            self.next_exploration_positions(&destination, min_travel_distance, max_travel_distance)
                 .iter()
                 .map(|position_and_direction| ExplorationQueueEntry {
                     destination: *position_and_direction,
@@ -96,28 +109,38 @@ impl CoolingMap {
     fn next_exploration_positions(
         &self,
         start: &PositionAndDirection,
+        min_distance: usize,
+        max_distance: usize,
     ) -> Vec<PositionAndDirection> {
         let (start_x, start_y) = start.position;
 
         let positions: Box<dyn Iterator<Item = (usize, usize)>> = match start.direction {
             Direction::Horizontal => {
-                let min_x = if start_x < 3 { 0 } else { start_x - 3 };
+                let min_x = if start_x < max_distance {
+                    0
+                } else {
+                    start_x - max_distance
+                };
 
-                let max_x = if start_x > self.width - 1 - 3 {
+                let max_x = if start_x > self.width - 1 - max_distance {
                     self.width - 1
                 } else {
-                    start_x + 3
+                    start_x + max_distance
                 };
 
                 Box::new((min_x..=max_x).zip(iter::repeat(start_y)))
             }
             Direction::Vertical => {
-                let min_y = if start_y < 3 { 0 } else { start_y - 3 };
+                let min_y = if start_y < max_distance {
+                    0
+                } else {
+                    start_y - max_distance
+                };
 
-                let max_y = if start_y > self.height() - 1 - 3 {
+                let max_y = if start_y > self.height() - 1 - max_distance {
                     self.height() - 1
                 } else {
-                    start_y + 3
+                    start_y + max_distance
                 };
 
                 Box::new(iter::repeat(start_x).zip(min_y..=max_y))
@@ -125,7 +148,9 @@ impl CoolingMap {
         };
 
         positions
-            .filter(|&(x, y)| x != start_x || y != start_y)
+            .filter(|&(x, y)| {
+                start_x.abs_diff(x) >= min_distance || start_y.abs_diff(y) >= min_distance
+            })
             .map(|position| PositionAndDirection {
                 position,
                 direction: !start.direction,
@@ -264,10 +289,17 @@ mod test {
     "};
 
     #[test]
-    fn test_minimum_heat_loss() {
+    fn test_minimum_heat_loss_small_crucible() {
         let cooling_map = CoolingMap::from_str(TEST_MAP_STRING).unwrap();
 
-        assert_eq!(102, cooling_map.minimum_heat_loss());
+        assert_eq!(102, cooling_map.minimum_heat_loss_small_crucible());
+    }
+
+    #[test]
+    fn test_minimum_heat_loss_ultra_crucible() {
+        let cooling_map = CoolingMap::from_str(TEST_MAP_STRING).unwrap();
+
+        assert_eq!(94, cooling_map.minimum_heat_loss_ultra_crucible());
     }
 
     #[test]
@@ -287,26 +319,80 @@ mod test {
     fn test_next_exploration_positions() {
         let cooling_map = CoolingMap::from_str(TEST_MAP_STRING).unwrap();
 
-        let next_positions = cooling_map.next_exploration_positions(&PositionAndDirection {
-            position: (0, 0),
-            direction: Direction::Horizontal,
-        });
+        {
+            let next_positions = cooling_map.next_exploration_positions(
+                &PositionAndDirection {
+                    position: (0, 0),
+                    direction: Direction::Horizontal,
+                },
+                1,
+                3,
+            );
 
-        assert_eq!(3, next_positions.len());
+            assert_eq!(3, next_positions.len());
 
-        assert!(next_positions.contains(&PositionAndDirection {
-            position: (1, 0),
-            direction: Direction::Vertical
-        }));
+            assert!(next_positions.contains(&PositionAndDirection {
+                position: (1, 0),
+                direction: Direction::Vertical
+            }));
 
-        assert!(next_positions.contains(&PositionAndDirection {
-            position: (2, 0),
-            direction: Direction::Vertical
-        }));
+            assert!(next_positions.contains(&PositionAndDirection {
+                position: (2, 0),
+                direction: Direction::Vertical
+            }));
 
-        assert!(next_positions.contains(&PositionAndDirection {
-            position: (3, 0),
-            direction: Direction::Vertical
-        }));
+            assert!(next_positions.contains(&PositionAndDirection {
+                position: (3, 0),
+                direction: Direction::Vertical
+            }));
+        }
+
+        {
+            let next_positions = cooling_map.next_exploration_positions(
+                &PositionAndDirection {
+                    position: (0, 0),
+                    direction: Direction::Horizontal,
+                },
+                4,
+                10,
+            );
+
+            assert_eq!(7, next_positions.len());
+
+            assert!(next_positions.contains(&PositionAndDirection {
+                position: (4, 0),
+                direction: Direction::Vertical
+            }));
+
+            assert!(next_positions.contains(&PositionAndDirection {
+                position: (5, 0),
+                direction: Direction::Vertical
+            }));
+
+            assert!(next_positions.contains(&PositionAndDirection {
+                position: (6, 0),
+                direction: Direction::Vertical
+            }));
+
+            assert!(next_positions.contains(&PositionAndDirection {
+                position: (7, 0),
+                direction: Direction::Vertical
+            }));
+
+            assert!(next_positions.contains(&PositionAndDirection {
+                position: (8, 0),
+                direction: Direction::Vertical
+            }));
+
+            assert!(next_positions.contains(&PositionAndDirection {
+                position: (9, 0),
+                direction: Direction::Vertical
+            }));
+
+            assert!(next_positions.contains(&PositionAndDirection {
+                position: (10, 0),
+                direction: Direction::Vertical
+            }));
+        }
     }
 }
