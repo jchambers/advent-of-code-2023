@@ -22,6 +22,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             part_sorter.accepted_part_rating_sum()
         );
 
+        println!(
+            "Distinct accepted part configurations: {}",
+            part_sorter.possible_accepted_parts()
+        );
+
         Ok(())
     } else {
         Err("Usage: day19 INPUT_FILE_PATH".into())
@@ -64,6 +69,53 @@ impl PartSorter {
             Action::Accept => true,
             Action::Reject => false,
         }
+    }
+
+    fn possible_accepted_parts(&self) -> u64 {
+        let mut stack = vec![(
+            Action::Transfer(String::from(Self::INITIAL_RULE)),
+            PartSpace::default(),
+        )];
+        let mut accepted_parts = 0;
+
+        while let Some((action, space)) = stack.pop() {
+            match action {
+                Action::Transfer(workflow_id) => {
+                    let workflow = self
+                        .workflows
+                        .get(&workflow_id)
+                        .expect("Referenced workflow must exist");
+                    let mut remainder = space;
+
+                    for rule in &workflow.rules {
+                        match rule.condition {
+                            Condition::LessThan(component, value) => {
+                                let (selected, r) = remainder.partition_less_than(component, value);
+                                stack.push((rule.action.clone(), selected));
+
+                                remainder = r;
+                            }
+                            Condition::GreaterThan(component, value) => {
+                                let (selected, r) =
+                                    remainder.partition_greater_than(component, value);
+                                stack.push((rule.action.clone(), selected));
+
+                                remainder = r;
+                            }
+                            Condition::MatchAll => {
+                                // This should be the last entry in the list of rules; no need to worry about the
+                                // remainder (but WE could set it to "empty" if we really wanted to).
+                                stack.push((rule.action.clone(), remainder));
+                            }
+                        }
+                    }
+                }
+                Action::Accept => accepted_parts += space.volume(),
+                Action::Reject => {}
+            }
+        }
+
+        accepted_parts
     }
 }
 
@@ -179,6 +231,7 @@ impl FromStr for Rule {
     }
 }
 
+#[derive(Eq, PartialEq)]
 enum Condition {
     LessThan(Component, u32),
     GreaterThan(Component, u32),
@@ -265,7 +318,7 @@ impl IndexMut<Component> for Part {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 enum Component {
     X,
     M,
@@ -283,6 +336,82 @@ impl FromStr for Component {
             "a" => Ok(Component::A),
             "s" => Ok(Component::S),
             _ => Err("Unrecognized component".into()),
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+struct PartSpace {
+    x_range: (u32, u32),
+    m_range: (u32, u32),
+    a_range: (u32, u32),
+    s_range: (u32, u32),
+}
+
+impl PartSpace {
+    fn volume(&self) -> u64 {
+        [self.x_range, self.m_range, self.a_range, self.s_range]
+            .iter()
+            .map(|(start, end)| ((end - start) + 1) as u64)
+            .product()
+    }
+
+    fn partition_less_than(&self, component: Component, value: u32) -> (Self, Self) {
+        let mut selected = *self;
+        let mut remainder = *self;
+
+        let original_range = self[component];
+
+        selected[component] = (original_range.0, value - 1);
+        remainder[component] = (value, original_range.1);
+
+        (selected, remainder)
+    }
+
+    fn partition_greater_than(&self, component: Component, value: u32) -> (Self, Self) {
+        let mut selected = *self;
+        let mut remainder = *self;
+
+        let original_range = self[component];
+
+        selected[component] = (value + 1, original_range.1);
+        remainder[component] = (original_range.0, value);
+
+        (selected, remainder)
+    }
+}
+
+impl Default for PartSpace {
+    fn default() -> Self {
+        PartSpace {
+            x_range: (1, 4000),
+            m_range: (1, 4000),
+            a_range: (1, 4000),
+            s_range: (1, 4000),
+        }
+    }
+}
+
+impl Index<Component> for PartSpace {
+    type Output = (u32, u32);
+
+    fn index(&self, component: Component) -> &Self::Output {
+        match component {
+            Component::X => &self.x_range,
+            Component::M => &self.m_range,
+            Component::A => &self.a_range,
+            Component::S => &self.s_range,
+        }
+    }
+}
+
+impl IndexMut<Component> for PartSpace {
+    fn index_mut(&mut self, component: Component) -> &mut Self::Output {
+        match component {
+            Component::X => &mut self.x_range,
+            Component::M => &mut self.m_range,
+            Component::A => &mut self.a_range,
+            Component::S => &mut self.s_range,
         }
     }
 }
@@ -317,5 +446,71 @@ mod test {
         let part_sorter = PartSorter::from_str(TEST_SORTER_STRING).unwrap();
 
         assert_eq!(19114, part_sorter.accepted_part_rating_sum());
+    }
+
+    #[test]
+    fn test_possible_accepted_parts() {
+        let part_sorter = PartSorter::from_str(TEST_SORTER_STRING).unwrap();
+
+        assert_eq!(167_409_079_868_000, part_sorter.possible_accepted_parts());
+    }
+
+    #[test]
+    fn test_part_space_volume() {
+        assert_eq!(4000 * 4000 * 4000 * 4000, PartSpace::default().volume());
+    }
+
+    #[test]
+    fn test_part_space_partition_less_than() {
+        let expected_selected = PartSpace {
+            x_range: (1, 4000),
+            m_range: (1, 4000),
+            a_range: (1, 999),
+            s_range: (1, 4000),
+        };
+
+        let expected_remainder = PartSpace {
+            x_range: (1, 4000),
+            m_range: (1, 4000),
+            a_range: (1000, 4000),
+            s_range: (1, 4000),
+        };
+
+        assert_eq!(
+            (expected_selected, expected_remainder),
+            PartSpace::default().partition_less_than(Component::A, 1000)
+        );
+
+        assert_eq!(
+            PartSpace::default().volume(),
+            expected_selected.volume() + expected_remainder.volume()
+        );
+    }
+
+    #[test]
+    fn test_part_space_partition_greater_than() {
+        let expected_selected = PartSpace {
+            x_range: (1, 4000),
+            m_range: (1001, 4000),
+            a_range: (1, 4000),
+            s_range: (1, 4000),
+        };
+
+        let expected_remainder = PartSpace {
+            x_range: (1, 4000),
+            m_range: (1, 1000),
+            a_range: (1, 4000),
+            s_range: (1, 4000),
+        };
+
+        assert_eq!(
+            (expected_selected, expected_remainder),
+            PartSpace::default().partition_greater_than(Component::M, 1000)
+        );
+
+        assert_eq!(
+            PartSpace::default().volume(),
+            expected_selected.volume() + expected_remainder.volume()
+        );
     }
 }
