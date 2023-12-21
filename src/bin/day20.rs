@@ -10,14 +10,25 @@ fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
 
     if let Some(path) = args.get(1) {
-        let mut pulse_machine = {
-            let mut pulse_machine_string = String::new();
-            File::open(path)?.read_to_string(&mut pulse_machine_string)?;
+        {
+            let pulse_machine = {
+                let mut pulse_machine_string = String::new();
+                File::open(path)?.read_to_string(&mut pulse_machine_string)?;
 
-            PulseMachine::from_str(pulse_machine_string.as_str())?
-        };
+                PulseMachine::from_str(pulse_machine_string.as_str())?
+            };
+
+            println!("{}", pulse_machine);
+        }
 
         {
+            let pulse_machine = {
+                let mut pulse_machine_string = String::new();
+                File::open(path)?.read_to_string(&mut pulse_machine_string)?;
+
+                PulseMachine::from_str(pulse_machine_string.as_str())?
+            };
+
             let (low, high) = pulse_machine.pulses(1000);
 
             println!(
@@ -25,6 +36,20 @@ fn main() -> Result<(), Box<dyn Error>> {
                 low,
                 high,
                 low as u64 * high as u64
+            );
+        }
+
+        {
+            let pulse_machine = {
+                let mut pulse_machine_string = String::new();
+                File::open(path)?.read_to_string(&mut pulse_machine_string)?;
+
+                PulseMachine::from_str(pulse_machine_string.as_str())?
+            };
+
+            println!(
+                "Button presses until single pulse to \"rx\": {}",
+                pulse_machine.button_presses_until_single_low_pulse("rx")
             );
         }
 
@@ -39,7 +64,7 @@ struct PulseMachine {
 }
 
 impl PulseMachine {
-    fn pulses(&mut self, button_presses: u32) -> (u32, u32) {
+    fn pulses(mut self, button_presses: u32) -> (u32, u32) {
         let mut previous_states: Vec<String> = Vec::new();
         let mut state_cache: HashMap<String, (u32, u32)> = HashMap::new();
 
@@ -98,6 +123,18 @@ impl PulseMachine {
         (low_pulses, high_pulses)
     }
 
+    fn button_presses_until_single_low_pulse(mut self, watched_module_id: &str) -> u32 {
+        let mut button_presses = 0;
+
+        loop {
+            button_presses += 1;
+
+            if self.low_pulses_after_button_press(watched_module_id) == 1 {
+                return button_presses;
+            }
+        }
+    }
+
     fn handle_button_press(&mut self) -> (u32, u32) {
         let mut pulse_queue: VecDeque<(String, String, Pulse)> = VecDeque::new();
         pulse_queue.push_back((
@@ -122,6 +159,30 @@ impl PulseMachine {
         }
 
         (low_pulses, high_pulses)
+    }
+
+    fn low_pulses_after_button_press(&mut self, watched_module_id: &str) -> u32 {
+        let mut pulse_queue: VecDeque<(String, String, Pulse)> = VecDeque::new();
+        pulse_queue.push_back((
+            String::from("button"),
+            String::from(Broadcaster::BROADCASTER_ID),
+            Pulse::Low,
+        ));
+
+        let mut watched_low_pulses = 0;
+
+        while let Some((source, destination, pulse)) = pulse_queue.pop_front() {
+            if pulse == Pulse::Low && destination.as_str() == watched_module_id {
+                watched_low_pulses += 1;
+            }
+
+            // Not all outputs reference a module; some are just sinks
+            if let Some(destination) = self.modules.get_mut(&destination) {
+                Self::enqueue_pulses(&mut **destination, (pulse, &source), &mut pulse_queue);
+            }
+        }
+
+        watched_low_pulses
     }
 
     fn enqueue_pulses(
@@ -195,11 +256,44 @@ impl FromStr for PulseMachine {
     }
 }
 
+impl Display for PulseMachine {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "digraph pulse_machine {{")?;
+
+        writeln!(f, "\tnode [shape=box]; {};", Broadcaster::BROADCASTER_ID)?;
+        writeln!(f, "\tnode [shape=doublecircle]; rx;")?;
+        writeln!(f, "\tnode [shape=ellipse];")?;
+        writeln!(f)?;
+
+        for (id, module) in &self.modules {
+            for destination in module.destinations() {
+                if let Some(destination_module) = self.modules.get(destination) {
+                    writeln!(
+                        f,
+                        "\t\"{}{}\" -> \"{}{}\";",
+                        module.prefix(),
+                        id,
+                        destination_module.prefix(),
+                        destination_module.id()
+                    )?;
+                } else {
+                    writeln!(f, "\t\"{}{}\" -> \"{}\";", module.prefix(), id, destination)?;
+                }
+            }
+        }
+
+        writeln!(f, "}}")?;
+
+        Ok(())
+    }
+}
+
 trait Module {
     fn id(&self) -> &str;
     fn destinations(&self) -> &[String];
     fn handle_pulse(&mut self, pulse: Pulse, source: &str) -> Vec<(String, Pulse)>;
     fn state(&self) -> String;
+    fn prefix(&self) -> String;
 }
 
 struct FlipFlop {
@@ -251,6 +345,10 @@ impl Module for FlipFlop {
         } else {
             String::from("off")
         }
+    }
+
+    fn prefix(&self) -> String {
+        String::from("\\%")
     }
 }
 
@@ -328,6 +426,10 @@ impl Module for Conjunction {
 
         sorted_inputs.join(",")
     }
+
+    fn prefix(&self) -> String {
+        String::from("&")
+    }
 }
 
 impl FromStr for Conjunction {
@@ -374,6 +476,10 @@ impl Module for Broadcaster {
     }
 
     fn state(&self) -> String {
+        String::new()
+    }
+
+    fn prefix(&self) -> String {
         String::new()
     }
 }
