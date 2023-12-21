@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
 
     if let Some(path) = args.get(1) {
-        {
+        /* {
             let pulse_machine = {
                 let mut pulse_machine_string = String::new();
                 File::open(path)?.read_to_string(&mut pulse_machine_string)?;
@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             };
 
             println!("{}", pulse_machine);
-        }
+        } */
 
         {
             let pulse_machine = {
@@ -40,17 +40,46 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         {
-            let pulse_machine = {
-                let mut pulse_machine_string = String::new();
-                File::open(path)?.read_to_string(&mut pulse_machine_string)?;
+            // This is a little gross and involves knowing something about how the input is
+            // structured. Basically, there are four "feeder" cycles with prime cycle lengths. Those
+            // all go into a single conjunction that then sends its output to rx. So we find the
+            // input to RX, find its sources, then find the least common multiple and we're done.
+            let feeders: Vec<String> = {
+                let pulse_machine = {
+                    let mut pulse_machine_string = String::new();
+                    File::open(path)?.read_to_string(&mut pulse_machine_string)?;
 
-                PulseMachine::from_str(pulse_machine_string.as_str())?
+                    PulseMachine::from_str(pulse_machine_string.as_str())?
+                };
+
+                let rx_input = pulse_machine
+                    .modules
+                    .values()
+                    .find(|module| module.destinations().contains(&String::from("rx")))
+                    .unwrap();
+
+                pulse_machine
+                    .modules
+                    .values()
+                    .filter(|module| module.destinations().contains(&String::from(rx_input.id())))
+                    .map(|module| String::from(module.id()))
+                    .collect()
             };
 
-            println!(
-                "Button presses until single pulse to \"rx\": {}",
-                pulse_machine.button_presses_until_single_low_pulse("rx")
-            );
+            let mut presses = 1;
+
+            for feeder_id in feeders {
+                let pulse_machine = {
+                    let mut pulse_machine_string = String::new();
+                    File::open(path)?.read_to_string(&mut pulse_machine_string)?;
+
+                    PulseMachine::from_str(pulse_machine_string.as_str())?
+                };
+
+                presses *= pulse_machine.button_presses_until_single_low_pulse(feeder_id.as_str());
+            }
+
+            println!("Button presses until single low pulse to rx: {}", presses);
         }
 
         Ok(())
@@ -123,7 +152,7 @@ impl PulseMachine {
         (low_pulses, high_pulses)
     }
 
-    fn button_presses_until_single_low_pulse(mut self, watched_module_id: &str) -> u32 {
+    fn button_presses_until_single_low_pulse(mut self, watched_module_id: &str) -> u64 {
         let mut button_presses = 0;
 
         loop {
