@@ -15,7 +15,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             .map(|line| Brick::from_str(line.as_str()))
             .collect::<Result<_, _>>()?;
 
-        println!("Disintegratable bricks: {}", brick_stack.removable_bricks());
+        println!(
+            "Disintegratable bricks: {}",
+            brick_stack.removable_bricks().len()
+        );
+
+        println!("Falling brick sum: {}", brick_stack.disintegration_sum());
 
         Ok(())
     } else {
@@ -23,17 +28,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 }
 
+#[derive(Clone)]
 struct BrickStack {
     bricks: Vec<Brick>,
 }
 
 impl BrickStack {
-    fn settle_bricks(&mut self) {
+    fn settle_bricks(&mut self) -> usize {
         // Reverse sort order so we can easily pop the bricks closest to the ground from the end
         // of the list
         self.bricks.sort_by_key(|b| std::cmp::Reverse(b.min_z()));
 
         let mut settled_bricks: Vec<Brick> = Vec::with_capacity(self.bricks.len());
+        let mut bricks_moved = 0;
 
         while let Some(mut brick) = self.bricks.pop() {
             let floor_z = settled_bricks
@@ -43,15 +50,19 @@ impl BrickStack {
                 .max()
                 .unwrap_or(0);
 
-            brick.lower_to(floor_z + 1);
+            if brick.lower_to(floor_z + 1) {
+                bricks_moved += 1;
+            }
 
             settled_bricks.push(brick);
         }
 
         self.bricks = settled_bricks;
+
+        bricks_moved
     }
 
-    fn removable_bricks(&self) -> usize {
+    fn removable_bricks(&self) -> HashSet<&Brick> {
         let max_z = self
             .bricks
             .iter()
@@ -81,7 +92,36 @@ impl BrickStack {
             }
         }
 
-        removable_bricks.len()
+        removable_bricks
+    }
+
+    fn chaos_bricks(&self) -> HashSet<&Brick> {
+        let mut chaos_bricks = HashSet::from_iter(self.bricks.iter());
+
+        self.removable_bricks().iter().for_each(|b| {
+            chaos_bricks.remove(b);
+        });
+
+        chaos_bricks
+    }
+
+    fn disintegration_sum(&self) -> usize {
+        self.chaos_bricks()
+            .iter()
+            .map(|removable_brick| {
+                let mut cloned_stack = self.clone();
+
+                cloned_stack.bricks.remove(
+                    cloned_stack
+                        .bricks
+                        .iter()
+                        .position(|b| &b == removable_brick)
+                        .expect("Cloned stack must contain removable brick"),
+                );
+
+                cloned_stack.settle_bricks()
+            })
+            .sum()
     }
 }
 
@@ -97,7 +137,7 @@ impl FromIterator<Brick> for BrickStack {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
 struct Brick {
     ends: [(u32, u32, u32); 2],
 }
@@ -111,17 +151,20 @@ impl Brick {
         self.ends[0].2.max(self.ends[1].2)
     }
 
-    fn lower_to(&mut self, target_z: u32) {
-        assert!(
+    fn lower_to(&mut self, target_z: u32) -> bool {
+        debug_assert!(
             target_z <= self.min_z(),
             "Brick already below target Z coordinate"
         );
-        assert_ne!(0, target_z, "Cannot lower brick below ground level");
+
+        debug_assert_ne!(0, target_z, "Cannot lower brick below ground level");
 
         let delta_z = self.min_z() - target_z;
 
         self.ends[0].2 -= delta_z;
         self.ends[1].2 -= delta_z;
+
+        delta_z > 0
     }
 
     fn shares_vertical_column(&self, other: &Brick) -> bool {
@@ -191,12 +234,23 @@ mod test {
 
     #[test]
     fn test_removable_bricks() {
-        let mut brick_stack: BrickStack = TEST_BRICKS_STRING
+        let brick_stack: BrickStack = TEST_BRICKS_STRING
             .lines()
             .map(Brick::from_str)
             .collect::<Result<_, _>>()
             .unwrap();
 
-        assert_eq!(5, brick_stack.removable_bricks());
+        assert_eq!(5, brick_stack.removable_bricks().len());
+    }
+
+    #[test]
+    fn test_disintegration_sum() {
+        let brick_stack: BrickStack = TEST_BRICKS_STRING
+            .lines()
+            .map(Brick::from_str)
+            .collect::<Result<_, _>>()
+            .unwrap();
+
+        assert_eq!(7, brick_stack.disintegration_sum());
     }
 }
