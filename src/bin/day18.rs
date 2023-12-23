@@ -27,122 +27,78 @@ struct DigPlan {
 }
 
 impl DigPlan {
-    fn line_segments(&self) -> Vec<LineSegment> {
-        let mut segments = Vec::with_capacity(self.instructions.len());
-        let mut last_position = (0, 0);
+    fn enclosed_area(&self) -> u64 {
+        // This is a bit of lazy cheat, but let's assume we're traveling clockwise (true in the example data and my
+        // personal puzzle input). Let's also assume (less specific to the input) that the path is always the exterior
+        // perimeter of the trench and there are no "pinched off" sections.
+        //
+        // The strategy here, then, is to get the coordinates of the vertices of the bounding polygon of the trench.
+        // This is slightly complicated by off-by-one issues. If we go R4, D2, then we have:
+        //
+        // #####
+        //     #
+        //     #
+        //
+        // …which is the start of a 5 × 3 box (area 15). But if we just treat those directions as coordinate changes
+        // (x += 4, y -= 2), then we wind up with a polygon with area 8, which is clearly incorrect. To fix that, we
+        // insert a "phantom" R1 when transitioning from upward travel to downward travel, then a "phantom" L1 when
+        // transitioning back. The transition between left/right gets analogous treatment with phantom U1/D1
+        // instructions.
+        //
+        // With the bounding polygon figured out, we can use the shoelace formula to find the area of the polygon in
+        // O(n).
+        let mut previous_vertical_direction = Direction::Up;
+        let mut previous_horizontal_direction = Direction::Right;
+
+        let mut vertices = Vec::with_capacity(self.instructions.len());
+        vertices.push((0, 0));
 
         for instruction in &self.instructions {
-            let distance = instruction.distance as i32;
-
-            let mut next_position = match instruction.direction {
-                Direction::Up => (last_position.0, last_position.1 + distance),
-                Direction::Down => (last_position.0, last_position.1 - distance),
-                Direction::Left => (last_position.0 - distance, last_position.1),
-                Direction::Right => (last_position.0 + distance, last_position.1),
+            let x_offset = match (&previous_vertical_direction, &instruction.direction) {
+                (Direction::Up, Direction::Down) => 1,
+                (Direction::Down, Direction::Up) => -1,
+                _ => 0,
             };
 
-            segments.push(LineSegment {
-                start: last_position,
-                end: next_position,
-            });
+            let y_offset = match (&previous_horizontal_direction, &instruction.direction) {
+                (Direction::Left, Direction::Right) => 1,
+                (Direction::Right, Direction::Left) => -1,
+                _ => 0,
+            };
 
-            last_position = next_position;
-        }
+            if x_offset != 0 || y_offset != 0 {
+                let (x, y) = vertices.last().unwrap();
+                vertices.push((x + x_offset, y + y_offset));
+            }
 
-        // Close the perimeter if it's not closed already
-        if last_position != (0, 0) {
-            segments.push(LineSegment {
-                start: last_position,
-                end: (0, 0),
-            });
-        }
+            let (x, y) = vertices.last().unwrap();
 
-        segments
-    }
+            match instruction.direction {
+                Direction::Up => vertices.push((*x, *y + instruction.distance as i32)),
+                Direction::Down => vertices.push((*x, *y - instruction.distance as i32)),
+                Direction::Left => vertices.push((*x - instruction.distance as i32, *y)),
+                Direction::Right => vertices.push((*x + instruction.distance as i32, *y)),
+            }
 
-    fn perimeter(&self) -> u32 {
-        self.instructions
-            .iter()
-            .map(|instruction| instruction.distance as u32)
-            .sum::<u32>()
-    }
-
-    fn enclosed_area(&self) -> u32 {
-        let segments = self.line_segments();
-
-        let min_x = segments
-            .iter()
-            .map(|segment| segment.start.0.min(segment.end.0))
-            .min()
-            .unwrap();
-
-        let max_x = segments
-            .iter()
-            .map(|segment| segment.start.0.max(segment.end.0))
-            .max()
-            .unwrap();
-
-        let min_y = segments
-            .iter()
-            .map(|segment| segment.start.1.min(segment.end.1))
-            .min()
-            .unwrap();
-
-        let max_y = segments
-            .iter()
-            .map(|segment| segment.start.1.max(segment.end.1))
-            .max()
-            .unwrap();
-
-        let width = (max_x - min_x) + 1;
-        let height = (max_y - min_y) + 1;
-
-        let mut excavated_tiles = vec![false; (width * height) as usize];
-
-        // Fill perimeter tiles; we only need to pay attention to horizontal segments because we'll
-        // get the vertical segments on area fill.
-        segments
-            .iter()
-            .filter(|segment| segment.is_horizontal())
-            .map(|segment| segment.translate(-min_x, -min_y))
-            .for_each(|segment| {
-                let start_index = segment.start.0 + (width * segment.start.1);
-                let end_index = segment.end.0 + (width * segment.end.1);
-
-                for i in start_index.min(end_index) as usize..=start_index.max(end_index) as usize {
-                    excavated_tiles[i] = true;
-                }
-            });
-
-        // Fill interior tiles
-        let vertical_segments: Vec<&LineSegment> = segments
-            .iter()
-            .filter(|segment| segment.is_vertical())
-            .collect();
-
-        for y in 0..height {
-            let mut intersecting_vertical_segments: Vec<LineSegment> = vertical_segments
-                .iter()
-                .map(|segment| segment.translate(-min_x, -min_y))
-                .filter(|segment| segment.intersects_horizontal_line(y))
-                .filter(|segment| segment.start.1.min(segment.end.1) < y)
-                .collect();
-
-            intersecting_vertical_segments.sort_by(|a, b| a.start.0.cmp(&b.start.0));
-
-            for pair in intersecting_vertical_segments.chunks_exact(2) {
-                if let [left, right] = pair {
-                    let start_index = left.start.0 + (width * y);
-                    let end_index = right.start.0 + (width * y);
-
-                    for i in start_index as usize..=end_index as usize {
-                        excavated_tiles[i] = true;
-                    }
-                }
+            if instruction.direction.is_horizontal() {
+                previous_horizontal_direction = instruction.direction;
+            } else {
+                previous_vertical_direction = instruction.direction;
             }
         }
 
-        excavated_tiles.iter().filter(|&&t| t).count() as u32
+        let mut enclosed_area = 0;
+        let mut windows = vertices.windows(2);
+
+        while let Some([(x1, y1), (x2, y2)]) = windows.next() {
+            enclosed_area += ((y1 + y2) * (x1 - x2)) as i64
+        }
+
+        if let Some((x, y)) = vertices.last() {
+            enclosed_area += (x * y) as i64;
+        }
+
+        enclosed_area.unsigned_abs() / 2
     }
 }
 
@@ -156,7 +112,7 @@ impl FromIterator<Instruction> for DigPlan {
 
 struct Instruction {
     direction: Direction,
-    distance: usize,
+    distance: u32,
     _color: String,
 }
 
@@ -175,16 +131,26 @@ impl FromStr for Instruction {
                 _color,
             })
         } else {
-            Err("Could not parse instructiion".into())
+            Err("Could not parse instruction".into())
         }
     }
 }
 
+#[derive(Copy, Clone, Eq, PartialEq)]
 enum Direction {
     Up,
     Down,
     Left,
     Right,
+}
+
+impl Direction {
+    fn is_horizontal(&self) -> bool {
+        match self {
+            Direction::Left | Direction::Right => true,
+            Direction::Up | Direction::Down => false,
+        }
+    }
 }
 
 impl FromStr for Direction {
@@ -197,32 +163,6 @@ impl FromStr for Direction {
             "L" => Ok(Direction::Left),
             "R" => Ok(Direction::Right),
             _ => Err("Unrecognized direction".into()),
-        }
-    }
-}
-
-struct LineSegment {
-    start: (i32, i32),
-    end: (i32, i32),
-}
-
-impl LineSegment {
-    fn is_vertical(&self) -> bool {
-        self.start.0 == self.end.0 && self.start.1 != self.end.1
-    }
-
-    fn is_horizontal(&self) -> bool {
-        self.start.1 == self.end.1 && self.start.0 != self.end.0
-    }
-
-    fn intersects_horizontal_line(&self, y: i32) -> bool {
-        self.start.1.min(self.end.1) <= y && self.start.1.max(self.end.1) >= y
-    }
-
-    fn translate(&self, x: i32, y: i32) -> Self {
-        LineSegment {
-            start: (self.start.0 + x, self.start.1 + y),
-            end: (self.end.0 + x, self.end.1 + y),
         }
     }
 }
@@ -248,17 +188,6 @@ mod test {
         L 2 (#015232)
         U 2 (#7a21e3)
     "};
-
-    #[test]
-    fn test_perimeter() {
-        let dig_plan: DigPlan = TEST_INSTRUTIONS
-            .lines()
-            .map(Instruction::from_str)
-            .collect::<Result<_, _>>()
-            .unwrap();
-
-        assert_eq!(38, dig_plan.perimeter());
-    }
 
     #[test]
     fn test_enclosed_area() {
