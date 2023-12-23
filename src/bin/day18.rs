@@ -8,13 +8,28 @@ fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
 
     if let Some(path) = args.get(1) {
-        let dig_plan: DigPlan = BufReader::new(File::open(path)?)
-            .lines()
-            .map_while(Result::ok)
-            .map(|line| Instruction::from_str(line.as_str()))
-            .collect::<Result<_, _>>()?;
+        {
+            let dig_plan: DigPlan = BufReader::new(File::open(path)?)
+                .lines()
+                .map_while(Result::ok)
+                .map(|line| Instruction::from_str(line.as_str()))
+                .collect::<Result<_, _>>()?;
 
-        println!("Enclosed area: {}", dig_plan.enclosed_area());
+            println!("Enclosed area: {}", dig_plan.enclosed_area());
+        }
+
+        {
+            let dig_plan: DigPlan = BufReader::new(File::open(path)?)
+                .lines()
+                .map_while(Result::ok)
+                .map(|line| Instruction::from_str_color(line.as_str()))
+                .collect::<Result<_, _>>()?;
+
+            println!(
+                "Enclosed area with parsed colors: {}",
+                dig_plan.enclosed_area()
+            );
+        }
 
         Ok(())
     } else {
@@ -91,11 +106,11 @@ impl DigPlan {
         let mut windows = vertices.windows(2);
 
         while let Some([(x1, y1), (x2, y2)]) = windows.next() {
-            enclosed_area += ((y1 + y2) * (x1 - x2)) as i64
+            enclosed_area += (*y1 as i64 + *y2 as i64) * (*x1 as i64 - *x2 as i64)
         }
 
         if let Some((x, y)) = vertices.last() {
-            enclosed_area += (x * y) as i64;
+            enclosed_area += *x as i64 * *y as i64;
         }
 
         enclosed_area.unsigned_abs() / 2
@@ -110,25 +125,59 @@ impl FromIterator<Instruction> for DigPlan {
     }
 }
 
+#[derive(Debug, Eq, PartialEq)]
 struct Instruction {
     direction: Direction,
     distance: u32,
-    _color: String,
+}
+
+impl Instruction {
+    fn from_str_color(string: &str) -> Result<Self, Box<dyn Error>> {
+        if let [_, _, color] = string.split(' ').collect::<Vec<&str>>().as_slice() {
+            if let Some(color) = color
+                .strip_prefix("(#")
+                .and_then(|color| color.strip_suffix(')'))
+            {
+                if color.len() == 6 {
+                    let distance = u32::from_str_radix(&color[0..5], 16)?;
+
+                    let direction = match &color[5..] {
+                        "0" => Direction::Right,
+                        "1" => Direction::Down,
+                        "2" => Direction::Left,
+                        "3" => Direction::Up,
+                        _ => {
+                            return Err("Unrecognized direction".into());
+                        }
+                    };
+
+                    Ok(Instruction {
+                        direction,
+                        distance,
+                    })
+                } else {
+                    Err("Unexpected color length".into())
+                }
+            } else {
+                Err("Could not find color component of string".into())
+            }
+        } else {
+            Err("Could not parse instruction".into())
+        }
+    }
 }
 
 impl FromStr for Instruction {
     type Err = Box<dyn Error>;
 
     fn from_str(string: &str) -> Result<Self, Self::Err> {
-        if let [direction, distance, color] = string.split(' ').collect::<Vec<&str>>().as_slice() {
+        if let [direction, distance, _color] = string.split(' ').collect::<Vec<&str>>().as_slice() {
             let direction = Direction::from_str(direction)?;
             let distance = distance.parse()?;
-            let _color = String::from(*color);
 
             Ok(Instruction {
                 direction,
                 distance,
-                _color,
             })
         } else {
             Err("Could not parse instruction".into())
@@ -136,7 +185,7 @@ impl FromStr for Instruction {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum Direction {
     Up,
     Down,
@@ -198,5 +247,125 @@ mod test {
             .unwrap();
 
         assert_eq!(62, dig_plan.enclosed_area());
+    }
+
+    #[test]
+    fn test_instruction_from_str_color() {
+        for (string, expected_instruction) in [
+            (
+                "R 6 (#70c710)",
+                Instruction {
+                    distance: 461937,
+                    direction: Direction::Right,
+                },
+            ),
+            (
+                "D 5 (#0dc571)",
+                Instruction {
+                    distance: 56407,
+                    direction: Direction::Down,
+                },
+            ),
+            (
+                "L 2 (#5713f0)",
+                Instruction {
+                    distance: 356671,
+                    direction: Direction::Right,
+                },
+            ),
+            (
+                "D 2 (#d2c081)",
+                Instruction {
+                    distance: 863240,
+                    direction: Direction::Down,
+                },
+            ),
+            (
+                "R 2 (#59c680)",
+                Instruction {
+                    distance: 367720,
+                    direction: Direction::Right,
+                },
+            ),
+            (
+                "D 2 (#411b91)",
+                Instruction {
+                    distance: 266681,
+                    direction: Direction::Down,
+                },
+            ),
+            (
+                "L 5 (#8ceee2)",
+                Instruction {
+                    distance: 577262,
+                    direction: Direction::Left,
+                },
+            ),
+            (
+                "U 2 (#caa173)",
+                Instruction {
+                    distance: 829975,
+                    direction: Direction::Up,
+                },
+            ),
+            (
+                "L 1 (#1b58a2)",
+                Instruction {
+                    distance: 112010,
+                    direction: Direction::Left,
+                },
+            ),
+            (
+                "U 2 (#caa171)",
+                Instruction {
+                    distance: 829975,
+                    direction: Direction::Down,
+                },
+            ),
+            (
+                "R 2 (#7807d2)",
+                Instruction {
+                    distance: 491645,
+                    direction: Direction::Left,
+                },
+            ),
+            (
+                "U 3 (#a77fa3)",
+                Instruction {
+                    distance: 686074,
+                    direction: Direction::Up,
+                },
+            ),
+            (
+                "L 2 (#015232)",
+                Instruction {
+                    distance: 5411,
+                    direction: Direction::Left,
+                },
+            ),
+            (
+                "U 2 (#7a21e3)",
+                Instruction {
+                    distance: 500254,
+                    direction: Direction::Up,
+                },
+            ),
+        ] {
+            assert_eq!(
+                expected_instruction,
+                Instruction::from_str_color(string).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn test_enclosed_area_color() {
+        let dig_plan: DigPlan = TEST_INSTRUTIONS
+            .lines()
+            .map(Instruction::from_str_color)
+            .collect::<Result<_, _>>()
+            .unwrap();
+
+        assert_eq!(952_408_144_115, dig_plan.enclosed_area());
     }
 }
