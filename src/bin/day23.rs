@@ -15,7 +15,15 @@ fn main() -> Result<(), Box<dyn Error>> {
             HikingMap::from_str(hiking_map_string.as_str())?
         };
 
-        println!("Longest hike: {}", hiking_map.longest_hike());
+        println!(
+            "Longest hike without climbing: {}",
+            hiking_map.longest_hike(false)
+        );
+
+        println!(
+            "Longest hike with climbing: {}",
+            hiking_map.longest_hike(true)
+        );
 
         Ok(())
     } else {
@@ -29,10 +37,10 @@ struct HikingMap {
 }
 
 impl HikingMap {
-    fn longest_hike(&self) -> usize {
+    fn longest_hike(&self, allow_climbing: bool) -> usize {
         // Subtract 1 from the total distance because we're counting steps, not tiles visited, and
         // the starting tile doesn't count as a "step"
-        self.explore_from_state(1, vec![false; self.tiles.len()])
+        self.explore_from_state(1, vec![false; self.tiles.len()], allow_climbing)
             .unwrap()
             - 1
     }
@@ -41,6 +49,7 @@ impl HikingMap {
         &self,
         mut position: usize,
         mut explored_tiles: Vec<bool>,
+        allow_climbing: bool,
     ) -> Option<usize> {
         loop {
             explored_tiles[position] = true;
@@ -50,7 +59,7 @@ impl HikingMap {
                 return Some(explored_tiles.iter().filter(|&&t| t).count());
             }
 
-            let mut neighbors = self.explorable_neighbor_indices(position);
+            let mut neighbors = self.explorable_neighbor_indices(position, allow_climbing);
             neighbors.retain(|&neighbor| !explored_tiles[neighbor]);
 
             if neighbors.is_empty() {
@@ -64,14 +73,14 @@ impl HikingMap {
                 return neighbors
                     .iter()
                     .filter_map(|neighbor| {
-                        self.explore_from_state(*neighbor, explored_tiles.clone())
+                        self.explore_from_state(*neighbor, explored_tiles.clone(), allow_climbing)
                     })
                     .max();
             }
         }
     }
 
-    fn explorable_neighbor_indices(&self, index: usize) -> Vec<usize> {
+    fn explorable_neighbor_indices(&self, index: usize, allow_climbing: bool) -> Vec<usize> {
         let mut neighbor_indices = Vec::with_capacity(4);
 
         let x = index % self.width;
@@ -79,28 +88,32 @@ impl HikingMap {
 
         if x > 0
             && (self.tiles[index - 1] == Tile::Path
-                || self.tiles[index - 1] == Tile::Slope(Direction::Left))
+                || self.tiles[index - 1] == Tile::Slope(Direction::Left)
+                || (self.tiles[index - 1] != Tile::Forest && allow_climbing))
         {
             neighbor_indices.push(index - 1);
         }
 
         if x < self.width - 1
             && (self.tiles[index + 1] == Tile::Path
-                || self.tiles[index + 1] == Tile::Slope(Direction::Right))
+                || self.tiles[index + 1] == Tile::Slope(Direction::Right)
+                || (self.tiles[index + 1] != Tile::Forest && allow_climbing))
         {
             neighbor_indices.push(index + 1);
         }
 
         if y > 0
             && (self.tiles[index - self.width] == Tile::Path
-                || self.tiles[index - self.width] == Tile::Slope(Direction::Up))
+                || self.tiles[index - self.width] == Tile::Slope(Direction::Up)
+                || (self.tiles[index - self.width] != Tile::Forest && allow_climbing))
         {
             neighbor_indices.push(index - self.width);
         }
 
         if y < self.height() - 1
             && (self.tiles[index + self.width] == Tile::Path
-                || self.tiles[index + self.width] == Tile::Slope(Direction::Down))
+                || self.tiles[index + self.width] == Tile::Slope(Direction::Down)
+                || (self.tiles[index + self.width] != Tile::Forest && allow_climbing))
         {
             neighbor_indices.push(index + self.width);
         }
@@ -203,7 +216,16 @@ mod test {
     fn test_longest_hike() {
         assert_eq!(
             94,
-            HikingMap::from_str(TEST_MAP_STRING).unwrap().longest_hike()
+            HikingMap::from_str(TEST_MAP_STRING)
+                .unwrap()
+                .longest_hike(false)
+        );
+
+        assert_eq!(
+            154,
+            HikingMap::from_str(TEST_MAP_STRING)
+                .unwrap()
+                .longest_hike(true)
         );
     }
 }
