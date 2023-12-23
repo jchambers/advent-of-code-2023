@@ -102,15 +102,14 @@ impl DigPlan {
             }
         }
 
+        // Close the polygon
+        vertices.push((0, 0));
+
         let mut enclosed_area = 0;
         let mut windows = vertices.windows(2);
 
         while let Some([(x1, y1), (x2, y2)]) = windows.next() {
             enclosed_area += (*y1 as i64 + *y2 as i64) * (*x1 as i64 - *x2 as i64)
-        }
-
-        if let Some((x, y)) = vertices.last() {
-            enclosed_area += *x as i64 * *y as i64;
         }
 
         enclosed_area.unsigned_abs() / 2
