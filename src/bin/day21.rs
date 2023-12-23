@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-use std::env;
+use std::{env, iter};
 use std::error::Error;
 use std::fs::File;
 use std::io::Read;
@@ -63,6 +63,38 @@ impl GardenMap {
                 }
             }
         }
+
+        // Hypothesis (from visually inspecting input): there's a "ring" of radial symmetry in here. The start is in the
+        // center, so the max distance at which we want to look for a ring is the "radius" of the space, or the start
+        // point's distance from the edge.
+        let radius = start_index % self.width;
+
+        let start_x = start_index % self.width;
+        let start_y = start_index / self.width;
+
+        let mut steps_by_distance_from_start = Vec::from_iter(iter::repeat_with(Vec::new).take(radius + 1));
+
+        for (i, steps_to_tile) in distances.iter().enumerate() {
+            let x = i % self.width;
+            let y = i / self.width;
+
+            let distance = start_x.abs_diff(x) + start_y.abs_diff(y);
+
+            if distance <= radius {
+                steps_by_distance_from_start[distance].push(steps_to_tile);
+            }
+        }
+
+        steps_by_distance_from_start
+            .iter()
+            .enumerate()
+            .filter(|(_, step_counts)| {
+                let first = step_counts.first().unwrap();
+                step_counts.iter().all(|c| c == first)
+            })
+            .for_each(|(i, step_count)| {
+                println!("All tiles at distance {} reachable in {} steps", i, step_count.first().unwrap());
+            });
 
         // If a tile is within the maximum distance, the elf can just keep going back and forth
         // from an adjacent tile to "run out the clock" and hit the target number of steps as long
